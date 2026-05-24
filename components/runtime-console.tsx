@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { motion } from "framer-motion";
 import {
   Area,
@@ -17,13 +18,14 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import ReactFlow, {
+import {
   Background,
   BackgroundVariant,
   Controls,
   MarkerType,
   MiniMap,
   Position,
+  ReactFlow,
   type Edge,
   type Node,
 } from "@xyflow/react";
@@ -71,11 +73,6 @@ const telemetryFlux = [
   { t: "15:12", latency: 24, pressure: 53, quorum: 90 },
 ];
 
-const runtimeSlices = [
-  { name: "federated", value: 74, fill: palette.green },
-  { name: "isolated", value: 17, fill: palette.amber },
-  { name: "quarantined", value: 9, fill: palette.red },
-];
 
 const knowledgeNodes: Node[] = [
   {
@@ -209,7 +206,23 @@ const runtimeRows = [
   ["federation-sync", "98.1%", "7 peers", "locked"],
 ];
 
+const subscribeToHydration = () => () => undefined;
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
 export default function RuntimeConsole() {
+  const isMounted = useSyncExternalStore(subscribeToHydration, getClientSnapshot, getServerSnapshot);
+
+  if (!isMounted) {
+    return (
+      <main className="runtime-grid flex min-h-screen items-center justify-center bg-[#070B12] p-4 text-[#D7E2F2]">
+        <div className="border border-[#1F2A3D] bg-[#101827] px-4 py-3 text-[11px] uppercase tracking-[0.24em] text-[#35D0FF]">
+          Booting Urban OS runtime federation...
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="runtime-grid min-h-screen bg-[#070B12] p-3 text-[#D7E2F2] md:p-4">
       <div className="mx-auto flex max-w-[1800px] flex-col gap-3">
@@ -328,7 +341,7 @@ function ExecutionRow() {
         tone={palette.cyan}
         footer="adaptive route execution"
       >
-        <ResponsiveContainer width="100%" height={112}>
+        <ResponsiveContainer width="100%" height={112} minWidth={0}>
           <LineChart data={executionSeries}>
             <CartesianGrid stroke="#1F2A3D" strokeDasharray="2 4" />
             <XAxis dataKey="t" hide />
@@ -347,7 +360,7 @@ function ExecutionRow() {
         tone={palette.amber}
         footer="zone-local guardrails"
       >
-        <ResponsiveContainer width="100%" height={112}>
+        <ResponsiveContainer width="100%" height={112} minWidth={0}>
           <BarChart data={collapseBands}>
             <XAxis dataKey="zone" tick={{ fill: palette.muted, fontSize: 9 }} axisLine={false} tickLine={false} />
             <YAxis hide domain={[0, 100]} />
@@ -368,7 +381,7 @@ function ExecutionRow() {
         tone={palette.green}
         footer="runaway prevention envelope"
       >
-        <ResponsiveContainer width="100%" height={112}>
+        <ResponsiveContainer width="100%" height={112} minWidth={0}>
           <RadialBarChart innerRadius="58%" outerRadius="96%" data={[{ name: "containment", value: 82, fill: palette.green }]} startAngle={210} endAngle={-30}>
             <RadialBar dataKey="value" cornerRadius={8} background={{ fill: "#1F2A3D" }} />
             <Tooltip content={<RuntimeTooltip />} />
@@ -383,7 +396,7 @@ function ExecutionRow() {
         tone={palette.violet}
         footer="runtime bus pressure"
       >
-        <ResponsiveContainer width="100%" height={112}>
+        <ResponsiveContainer width="100%" height={112} minWidth={0}>
           <AreaChart data={telemetryFlux}>
             <defs>
               <linearGradient id="flux" x1="0" y1="0" x2="0" y2="1">
@@ -421,7 +434,7 @@ function RuntimeRow() {
       <Panel>
         <PanelHeading eyebrow="RUNTIME ROW" title="Latency / Pressure / Quorum" right="7-CELL MESH" />
         <div className="mt-3 h-[186px]">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <LineChart data={telemetryFlux}>
               <CartesianGrid stroke="#1F2A3D" strokeDasharray="2 5" />
               <XAxis dataKey="t" tick={{ fill: palette.muted, fontSize: 9 }} axisLine={false} tickLine={false} />
