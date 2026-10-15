@@ -1,0 +1,37 @@
+name: Actions storage inventory
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/storage-inventory.yml']
+permissions:
+  actions: read
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Measure current artifacts and caches without uploading artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: python
+        run: |
+          import subprocess,json,os
+          repo=os.environ["GH_REPO"]
+          artifacts=[]
+          page=1
+          while True:
+              data=json.loads(subprocess.check_output(["gh","api",f"repos/{repo}/actions/artifacts?per_page=100&page={page}"]))
+              batch=data["artifacts"]
+              artifacts.extend(batch)
+              if len(batch)<100: break
+              page+=1
+          active=[a for a in artifacts if not a["expired"]]
+          result={"repo":repo,"active_count":len(active),"active_bytes":sum(a["size_in_bytes"] for a in active),"expired_count":len(artifacts)-len(active),"artifacts":[{k:a.get(k) for k in ("id","name","size_in_bytes","created_at","expired","workflow_run")} for a in artifacts]}
+          cache=subprocess.run(["gh","api",f"repos/{repo}/actions/cache/usage"],capture_output=True,text=True)
+          result["cache"]=json.loads(cache.stdout) if cache.returncode==0 else {"unavailable":True}
+          print("STORAGE_INVENTORY="+json.dumps(result))
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              out.write(f"Active artifacts: {len(active)}; bytes: {result['active_bytes']}; expired records: {result['expired_count']}\n")
