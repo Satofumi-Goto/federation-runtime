@@ -1,0 +1,65 @@
+@import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
+
+:root {
+  --background: #070b12;
+  --card: #101827;
+  --border: #1f2a3d;
+  --muted: #6f7f99;
+  --text: #d7e2f2;
+  --signal: #35d0ff;
+  --green: #5cffb1;
+  --amber: #ffcc66;
+  --red: #ff5f7a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  background: var(--background);
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+::selection {
+  background: rgba(53, 208, 255, 0.24);
+}
+
+.runtime-grid {
+  background-image:
+    linear-gradient(rgba(53, 208, 255, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(53, 208, 255, 0.045) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.scanline::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(53, 208, 255, 0.035) 49%,
+    transparent 51%,
+    transparent 100%
+  );
+  background-size: 100% 7px;
+  mix-blend-mode: screen;
+}
+
+.react-flow__node {
+  font-family: inherit;
+}
+
+.react-flow__attribution {
+  display: none;
+}
