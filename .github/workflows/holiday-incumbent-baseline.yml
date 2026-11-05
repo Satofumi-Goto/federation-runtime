@@ -1,0 +1,35 @@
+name: Activity holidays one-shot incumbent baseline
+on:
+  pull_request:
+    paths:
+      - 'scripts/verify-activity-holiday-incumbent.mjs'
+      - 'scripts/tests/holiday-incumbent-baseline.test.mjs'
+      - '.github/workflows/holiday-incumbent-baseline.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: activity-holiday-baseline-${{ github.event_name }}
+  cancel-in-progress: false
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test scripts/tests/holiday-incumbent-baseline.test.mjs
+  live-readonly:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor_id == '281488838' && github.run_attempt == 1
+    needs: regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read-only holidays-jp GET + Activity existing public POST (one time)
+        run: node scripts/verify-activity-holiday-incumbent.mjs
