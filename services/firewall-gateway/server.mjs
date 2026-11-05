@@ -5,6 +5,7 @@ import {resolve} from 'node:path';
 import {createAuthenticator} from './auth.mjs';
 import {createAccessVerifier} from './access.mjs';
 import {createEgress} from './egress.mjs';
+import {createGithubCanaryVerifier} from './githubCanary.mjs';
 import {publicCatalog} from './policy.mjs';
 import {renderConsole} from './ui.mjs';
 
@@ -42,12 +43,13 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  const auth=createAuthenticator({env,clock});
  const access=createAccessVerifier({env,fetchImpl,clock});
  const egress=createEgress({env,fetchImpl,clock});
+ const githubCanary=createGithubCanaryVerifier({env,fetchImpl,clock});
  const server=http.createServer({maxHeaderSize:8192},async(req,res)=>{
   const path=(req.url||'').split('?')[0];
   // Probe audit is metadata only. Never log request bodies, client secrets,
   // signatures, IP addresses, cookies or provider payloads.
   let probeClient=null,probeRoute=null;
-  if(path==='/api/v1/shadow/probe')res.once('finish',()=>{
+  if(path==='/api/v1/shadow/probe'||path==='/api/v1/canary/github')res.once('finish',()=>{
     try{auditSink(JSON.stringify({
       type:'firewall.shadow.request',at:new Date(clock()).toISOString(),
       method:req.method,status:res.statusCode,client:probeClient,routeId:probeRoute,
@@ -74,6 +76,30 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     if(!verified.ok)return reply(res,verified.status,{ok:false,reason:verified.reason});
     const nonce=randomBytes(18).toString('base64url');
     return page(res,200,renderConsole({nonce,protectedView:true,canaryEnabled:egress.liveEnabled}),nonce);
+   }
+   if(path==='/api/v1/canary/github'){
+    // Separate single-purpose identity boundary: OIDC token must be minted by
+    // the pinned GitHub workflow, not by a browser or another service.
+    if(req.headers.origin||req.headers.cookie||req.headers['x-fw-client']||
+       req.headers['x-fw-signature'])
+     return reply(res,403,{ok:false,reason:'server-to-server-only'});
+    if(req.method!=='POST')return reply(res,405,{ok:false,reason:'method-not-allowed'});
+    if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
+     return reply(res,415,{ok:false,reason:'json-required'});
+    const authorization=req.headers.authorization;
+    if(typeof authorization!=='string'||!/^Bearer [A-Za-z0-9_.-]{100,12000}$/.test(authorization))
+     return reply(res,401,{ok:false,reason:'github-identity-required'});
+    let body;
+    try{body=await limitedBody(req,96);}
+    catch{return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});}
+    if(body!=='{"routeId":"japan-holidays"}')
+     return reply(res,400,{ok:false,reason:'unsupported-command'});
+    const identity=await githubCanary.verify(authorization.slice(7));
+    if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
+    probeClient='github-actions';probeRoute='japan-holidays';
+    const result=await egress.probe('federation','japan-holidays');
+    return reply(res,result.status,result.result,
+      result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});
    }
    if(path==='/api/v1/shadow/probe'){
     // A server-to-server signature must never be accepted from a browser
@@ -110,7 +136,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  server.headersTimeout=12000;
  server.keepAliveTimeout=3500;
  server.on('clientError',(_error,socket)=>{if(socket.writable)socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');});
- return {server,auth,access,egress};
+ return {server,auth,access,egress,githubCanary};
 }
 export function startServer(env=process.env){
  const port=Number(env.PORT||8789);
