@@ -4,6 +4,7 @@ on:
     paths:
       - 'scripts/verify-firewall-phase0-live.mjs'
       - 'scripts/tests/firewall-live-contract.test.mjs'
+      - 'scripts/tests/firewall-signed-loopback.test.mjs'
       - '.github/workflows/firewall-live-qa.yml'
   push:
     branches: [main]
@@ -23,7 +24,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test scripts/tests/firewall-live-contract.test.mjs
+      - run: node --test scripts/tests/firewall-*.test.mjs
   public-live:
     if: github.event_name != 'pull_request'
     needs: contract
