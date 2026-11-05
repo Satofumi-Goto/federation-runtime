@@ -1,0 +1,30 @@
+name: Firewall holidays — signed one-shot canary parity
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'config/firewall-holidays-once.run'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: firewall-holidays-signed-once
+  cancel-in-progress: false
+jobs:
+  verify-live-once:
+    if: github.repository == 'Satofumi-Goto/federation-runtime' && github.actor_id == '281488838' && github.run_number == 1 && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify fixed workflow, limited source, schema and syntax
+        run: |
+          node --check scripts/verify-firewall-github-canary-once.mjs
+          node --test services/firewall-gateway/test/*.test.mjs
+      - name: One-shot signed holiday API reading and full parity verification
+        run: node scripts/verify-firewall-github-canary-once.mjs
