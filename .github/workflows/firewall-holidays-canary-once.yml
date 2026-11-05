@@ -1,0 +1,48 @@
+name: Firewall holidays owner OIDC canary (single push)
+on:
+  pull_request:
+    paths:
+      - 'scripts/firewall-holidays-canary-once.mjs'
+      - '.github/workflows/firewall-holidays-canary-once.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/firewall-holidays-canary-once.yml'
+permissions:
+  contents: read
+concurrency:
+  group: firewall-holidays-canary-20261105
+  cancel-in-progress: false
+jobs:
+  offline-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Syntax and isolated gateway protections
+        run: |
+          node --check scripts/firewall-holidays-canary-once.mjs
+          node --check services/firewall-gateway/githubCanary.mjs
+          node --test services/firewall-gateway/test/*.test.mjs
+  signed-live:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Satofumi-Goto/federation-runtime' && github.actor_id == '281488838' && github.run_attempt == 1
+    needs: offline-contract
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Get short-lived OIDC identity and compare entire holiday data (READ ONLY)
+        run: node scripts/firewall-holidays-canary-once.mjs
