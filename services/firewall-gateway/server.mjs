@@ -38,12 +38,21 @@ async function limitedBody(req,max=512){
  }
  return Buffer.concat(chunks,size).toString('utf8');
 }
-export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.now}={}){
+export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.now,auditSink=console.info}={}){
  const auth=createAuthenticator({env,clock});
  const access=createAccessVerifier({env,fetchImpl,clock});
  const egress=createEgress({env,fetchImpl,clock});
  const server=http.createServer({maxHeaderSize:8192},async(req,res)=>{
   const path=(req.url||'').split('?')[0];
+  // Probe audit is metadata only. Never log request bodies, client secrets,
+  // signatures, IP addresses, cookies or provider payloads.
+  let probeClient=null,probeRoute=null;
+  if(path==='/api/v1/shadow/probe')res.once('finish',()=>{
+    try{auditSink(JSON.stringify({
+      type:'firewall.shadow.request',at:new Date(clock()).toISOString(),
+      method:req.method,status:res.statusCode,client:probeClient,routeId:probeRoute,
+    }));}catch{/* Observability must not interrupt responses. */}
+  });
   if(!req.url||req.url.length>1024)return reply(res,414,{ok:false,reason:'invalid-target'});
   try{
    if(req.method==='GET'&&path==='/healthz')
@@ -67,6 +76,10 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     return page(res,200,renderConsole({nonce,protectedView:true,canaryEnabled:egress.liveEnabled}),nonce);
    }
    if(path==='/api/v1/shadow/probe'){
+    // A server-to-server signature must never be accepted from a browser
+    // carrying ambient cookies, bearer authorization or Origin metadata.
+    if(req.headers.origin||req.headers.cookie||req.headers.authorization)
+     return reply(res,403,{ok:false,reason:'server-to-server-only'});
     if(req.method!=='POST')return reply(res,405,{ok:false,reason:'method-not-allowed'});
     if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
      return reply(res,415,{ok:false,reason:'json-required'});
@@ -75,6 +88,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     catch{return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});}
     const identity=auth.verify(req,body,path);
     if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
+    probeClient=identity.client;
     let command;
     try{command=JSON.parse(body);}
     catch{return reply(res,400,{ok:false,reason:'invalid-json'});}
@@ -82,6 +96,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       ||Object.keys(command).length!==1||typeof command.routeId!=='string'
       ||!/^[a-z0-9-]{1,64}$/.test(command.routeId))
       return reply(res,400,{ok:false,reason:'unsupported-command'});
+    probeRoute=command.routeId;
     const result=await egress.probe(identity.client,command.routeId);
     return reply(res,result.status,result.result,
       result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});
