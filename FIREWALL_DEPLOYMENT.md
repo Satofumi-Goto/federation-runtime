@@ -22,3 +22,11 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 - `server.mjs` and `test/audit.test.mjs` were mirrored with identical Git Blob SHA from the canonical repository.
 - Browser-origin, Cookie and Authorization-bearing shadow requests are rejected before any signed egress. Probe audit records only fixed route ID, authenticated client label, method, status and time; never record secrets, signatures, raw response, IP or request body.
 - Logs are local process stdout, **not immutable or distributed audit storage**. Live HMAC app-to-Render E2E and data-parity are still required before changing any incumbent route.
+
+## Phase 1.1: pinned, single-route holiday OIDC canary
+
+- Canonical upstream main SHA: `843d5aa5c7475b04d7a7cebd4a7df657a740c7fd` (PR [#976](https://github.com/Satofumi-Goto/federation-portal/pull/976)). Source files in `services/firewall-gateway/` were mirrored as byte-identical Git blobs.
+- Two-step deny-by-default upstream gate: `FIREWALL_CANARY_EGRESS=true` and `FIREWALL_CANARY_ROUTE_IDS=japan-holidays` are both required. No JMA, Open-Meteo, arbitrary URL, customer data or cutover.
+- An additional `FIREWALL_GITHUB_CANARY_OIDC=true` gate enables a one-purpose `POST /api/v1/canary/github` only from the pinned GitHub owner push workflow (signed JWT, issuer, audience, repo-id, ref, workflow-ref, actor-id, expiry, nonce). GitHub ID tokens are never printed or stored.
+- This is only source preparation. Do not arm egress or claim verified parity without deployment, a successful one-shot GitHub-signed live request, and independent legacy-source full-data comparison.
+- The Activity application HMAC secret is still not configured in Base44. A successful GitHub canary is *not* Activity signed E2E; the incumbent must remain active.
