@@ -1,0 +1,38 @@
+name: Firewall live Phase-0 fail-closed QA
+on:
+  pull_request:
+    paths:
+      - 'scripts/verify-firewall-phase0-live.mjs'
+      - 'scripts/tests/firewall-live-contract.test.mjs'
+      - '.github/workflows/firewall-live-qa.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/verify-firewall-phase0-live.mjs'
+      - 'scripts/tests/firewall-live-contract.test.mjs'
+      - '.github/workflows/firewall-live-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test scripts/tests/firewall-live-contract.test.mjs
+  public-live:
+    if: github.event_name != 'pull_request'
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify public GET, security headers, locked egress and denied unsigned POST
+        run: node scripts/verify-firewall-phase0-live.mjs
