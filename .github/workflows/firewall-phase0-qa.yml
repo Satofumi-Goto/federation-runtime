@@ -1,0 +1,30 @@
+name: Firewall Phase-0 distribution QA
+on:
+  pull_request:
+    paths:
+      - 'services/firewall-gateway/**'
+      - 'FIREWALL_DEPLOYMENT.md'
+      - '.github/workflows/firewall-phase0-qa.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'services/firewall-gateway/**'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Firewall security regression
+        run: node --test services/firewall-gateway/test/*.test.mjs
+      - name: Source syntax check
+        run: |
+          node --check services/firewall-gateway/server.mjs
+          node --check services/firewall-gateway/access.mjs
+          node --check services/firewall-gateway/auth.mjs
+          node --check services/firewall-gateway/egress.mjs
