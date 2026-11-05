@@ -29,7 +29,10 @@ export async function readBoundedJson(response,maxBytes){
 export function createEgress({env=process.env,fetchImpl=fetch,clock=Date.now}={}){
  const started=new Map(),cache=new Map(),failures=new Map(),pending=new Map();
  let active=0,totalStarted=0,windowStart=clock();
- const liveEnabled=env.FIREWALL_CANARY_EGRESS==='true';
+ // A two-step opt-in: a global canary switch alone NEVER opens all routes.
+ const liveEnabled=env.FIREWALL_CANARY_EGRESS==='true' &&
+   env.FIREWALL_CANARY_ROUTE_IDS==='japan-holidays';
+ const enabledRoutes=liveEnabled?new Set(['japan-holidays']):new Set();
  const allowHost=new Set(Object.values(ROUTES).map(route=>new URL(route.url).hostname));
  function admit(client,id){
   const now=clock();
@@ -41,6 +44,8 @@ export function createEgress({env=process.env,fetchImpl=fetch,clock=Date.now}={}
  }
  async function probe(client,routeId){
   if(!liveEnabled)return {status:503,result:{ok:false,reason:'egress-disabled'}};
+  if(!enabledRoutes.has(routeId))
+   return {status:403,result:{ok:false,reason:'route-not-enabled'}};
   const route=ROUTES[routeId];
   if(!route||!route.consumers.includes(client))
    return {status:403,result:{ok:false,reason:'route-not-permitted'}};
@@ -67,6 +72,13 @@ export function createEgress({env=process.env,fetchImpl=fetch,clock=Date.now}={}
     const recordCount=Array.isArray(data)?data.length:
       Array.isArray(data?.items)?data.items.length:Array.isArray(data?.events)?data.events.length:0;
     if(recordCount>route.maxRecords)throw Error('too-many-records');
+    if(route.id==='japan-holidays'){
+     const entries=Object.entries(data);
+     if(Array.isArray(data)||entries.length<1||entries.length>route.maxRecords||
+       entries.some(([date,name])=>!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date)
+        ||typeof name!=='string'||!name.trim()||name.length>120))
+      throw Error('invalid-holidays');
+    }
     const result={ok:true,mode:'shadow-only',routeId:route.id,provider:route.provider,
       sourceUrl:route.url,fetchedAt:new Date(clock()).toISOString(),cached:false,
       basis:'public-source-not-operational-live-proof',data};

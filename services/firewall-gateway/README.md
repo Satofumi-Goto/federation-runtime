@@ -46,3 +46,12 @@ Node.js 22以上。外部依存パッケージ、AI API、DB、課金設定な�
 Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更しない。Renderで新規**独立Webサービス**を接続し `node services/firewall-gateway/server.mjs` で起動。自動デプロイOFF、初期環境変数はカナリアOFF、管理アクセス未設定を既定とする。新サービスのページ・healthz・HTTPセキュリティヘッダー・管理画面拒否・未認証proxy拒否を公開URLで確認してはじめて「隔離アプリ配備」と呼ぶ。
 
 **実データのGateway経由とアプリUIへの接続切替は別PR/別検証**とし、Base44並行維持ポリシーを優先する。
+
+## Phase 1.1: 祝日1経路だけのGitHub OIDC署名カナリア
+
+- Gatewayの`FIREWALL_CANARY_EGRESS=true`と`FIREWALL_CANARY_ROUTE_IDS=japan-holidays`の**両方**を設定した場合だけ、上流GETを許可。どちらか未設定／違う文字列なら**全経路OFF**。地震・天気・任意URLはこの段階では拒否。
+- 固定の`POST /api/v1/canary/github`を追加。要求本文は正確に`{"routeId":"japan-holidays"}`のみ。GitHub Actions OIDCのRS256署名をGitHub公式JWKSで検証し、issuer/audience/repository名・ID/main/owner actor/workflow_ref/eventを固定照合。検証した短命JWTの同一jtiを拒否。ブラウザ由来のCookie・Originを拒否。
+- `FIREWALL_GITHUB_CANARY_OIDC=true`も必須。3つの設定のうち1つでも欠ければ、認証したGETも拒否する。
+- OIDC経路の目的はGitHubの承認済み一回限りの検証ワークフローから**Firewall→祝日API→旧経路と全件比較**を実行すること。**Activity実アプリの署名付きE2Eの代替ではない**。Activity側のHMAC鍵・Shadow有効化は依然として未設定、既存経路維持。
+- 追加の認証依存・AI・DB・有料API・利用者情報転送なし。GitHub IDトークン自体はログに記録しない。JWT nonce記録は単体プロセス内のみで、WAFや分散リプレイ保護とは呼ばない。
+- 配備の合格順: 正本PR CI → 公開用`federation-runtime`へ同一ファイルblobで別PR → Render autoDeploy OFFの手動配備 → HTTPS実測 → 専用 one-shot Actions による署名JWT疎通 → 祝日元データの全件ハッシュ照合 → Federation証跡更新。ユーザーの旧APIの停止・本番切替は行わない。
