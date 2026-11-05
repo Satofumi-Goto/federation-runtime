@@ -1,0 +1,24 @@
+name: Firewall OIDC distribution QA (single branch review)
+on:
+  push:
+    branches: [feature/firewall-oidc-holidays-canary-20261105]
+    paths: ['.github/workflows/firewall-oidc-distribution-qa.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: |
+          node --check services/firewall-gateway/githubCanary.mjs
+          node --check services/firewall-gateway/server.mjs
+          node --check services/firewall-gateway/egress.mjs
+          node --check scripts/verify-firewall-github-canary-once.mjs
+          node --test services/firewall-gateway/test/*.test.mjs
