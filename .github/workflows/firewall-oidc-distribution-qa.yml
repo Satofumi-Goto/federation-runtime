@@ -22,3 +22,5 @@ jobs:
           node --check services/firewall-gateway/egress.mjs
           node --check scripts/verify-firewall-github-canary-once.mjs
           node --test services/firewall-gateway/test/*.test.mjs
+          test -f scripts/verify-firewall-github-canary-once.mjs
+          test -f .github/workflows/firewall-holidays-canary-once.yml
