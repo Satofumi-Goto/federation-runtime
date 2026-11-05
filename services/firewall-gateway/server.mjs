@@ -1,0 +1,111 @@
+import http from 'node:http';
+import {randomBytes} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+import {resolve} from 'node:path';
+import {createAuthenticator} from './auth.mjs';
+import {createAccessVerifier} from './access.mjs';
+import {createEgress} from './egress.mjs';
+import {publicCatalog} from './policy.mjs';
+import {renderConsole} from './ui.mjs';
+
+const SECURITY_HEADERS=Object.freeze({
+ 'Cache-Control':'no-store',
+ 'X-Content-Type-Options':'nosniff',
+ 'X-Frame-Options':'DENY',
+ 'Referrer-Policy':'no-referrer',
+ 'Permissions-Policy':'camera=(), microphone=(), geolocation=(), payment=()',
+ 'Cross-Origin-Resource-Policy':'same-origin',
+ 'Cross-Origin-Opener-Policy':'same-origin',
+ 'Strict-Transport-Security':'max-age=86400',
+});
+const safeCsp=nonce=>"default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; img-src 'none'; script-src 'none'; connect-src 'none'; style-src 'nonce-"+nonce+"'";
+function reply(res,status,data,extra={}){
+ const headers={...SECURITY_HEADERS,'Content-Type':'application/json; charset=utf-8',...extra};
+ res.writeHead(status,headers);res.end(JSON.stringify(data));
+}
+function page(res,status,body,nonce){
+ res.writeHead(status,{...SECURITY_HEADERS,'Content-Type':'text/html; charset=utf-8',
+  'Content-Security-Policy':safeCsp(nonce)});
+ res.end(body);
+}
+async function limitedBody(req,max=512){
+ if(Number(req.headers['content-length'])>max)throw Error('request-too-large');
+ const chunks=[];let size=0;
+ for await(const part of req){
+  size+=part.byteLength;
+  if(size>max)throw Error('request-too-large');
+  chunks.push(part);
+ }
+ return Buffer.concat(chunks,size).toString('utf8');
+}
+export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.now}={}){
+ const auth=createAuthenticator({env,clock});
+ const access=createAccessVerifier({env,fetchImpl,clock});
+ const egress=createEgress({env,fetchImpl,clock});
+ const server=http.createServer({maxHeaderSize:8192},async(req,res)=>{
+  const path=(req.url||'').split('?')[0];
+  if(!req.url||req.url.length>1024)return reply(res,414,{ok:false,reason:'invalid-target'});
+  try{
+   if(req.method==='GET'&&path==='/healthz')
+    return reply(res,200,{service:'federation-firewall-gateway',stage:'shadow-hold',
+      productionReady:false,cutoverEnabled:false});
+   if(req.method==='GET'&&path==='/api/status')
+    return reply(res,200,{service:'federation-firewall-gateway',stage:'shadow-hold',
+      configuredClients:auth.configured,canaryEgressEnabled:egress.liveEnabled,
+      productionReady:false,cutoverEnabled:false,legacyConnectionsPreserved:true});
+   if(req.method==='GET'&&path==='/api/catalog')
+    return reply(res,200,publicCatalog());
+   if(req.method==='GET'&&(path==='/'||path==='/console')){
+    const nonce=randomBytes(18).toString('base64url');
+    return page(res,200,renderConsole({nonce,canaryEnabled:egress.liveEnabled}),nonce);
+   }
+   if(req.method==='GET'&&path==='/admin'){
+    const assertion=req.headers['cf-access-jwt-assertion'];
+    const verified=await access.verify(assertion);
+    if(!verified.ok)return reply(res,verified.status,{ok:false,reason:verified.reason});
+    const nonce=randomBytes(18).toString('base64url');
+    return page(res,200,renderConsole({nonce,protectedView:true,canaryEnabled:egress.liveEnabled}),nonce);
+   }
+   if(path==='/api/v1/shadow/probe'){
+    if(req.method!=='POST')return reply(res,405,{ok:false,reason:'method-not-allowed'});
+    if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
+     return reply(res,415,{ok:false,reason:'json-required'});
+    let body;
+    try{body=await limitedBody(req);}
+    catch{return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});}
+    const identity=auth.verify(req,body,path);
+    if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
+    let command;
+    try{command=JSON.parse(body);}
+    catch{return reply(res,400,{ok:false,reason:'invalid-json'});}
+    if(!command||typeof command!=='object'||Array.isArray(command)
+      ||Object.keys(command).length!==1||typeof command.routeId!=='string'
+      ||!/^[a-z0-9-]{1,64}$/.test(command.routeId))
+      return reply(res,400,{ok:false,reason:'unsupported-command'});
+    const result=await egress.probe(identity.client,command.routeId);
+    return reply(res,result.status,result.result,
+      result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});
+   }
+   return reply(res,404,{ok:false,reason:'not-found'});
+  }catch{
+   return reply(res,503,{ok:false,reason:'gateway-unavailable'});
+  }
+ });
+ server.requestTimeout=10000;
+ server.headersTimeout=12000;
+ server.keepAliveTimeout=3500;
+ server.on('clientError',(_error,socket)=>{if(socket.writable)socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');});
+ return {server,auth,access,egress};
+}
+export function startServer(env=process.env){
+ const port=Number(env.PORT||8789);
+ if(!Number.isInteger(port)||port<1||port>65535)throw Error('invalid-port');
+ const host=env.HOST||'0.0.0.0';
+ const app=createGatewayServer({env});
+ app.server.listen(port,host,()=>console.log(JSON.stringify({
+  service:'federation-firewall-gateway',stage:'shadow-hold',port,
+  canaryEgressEnabled:app.egress.liveEnabled,cutoverEnabled:false,
+ })));
+ return app;
+}
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))startServer();
