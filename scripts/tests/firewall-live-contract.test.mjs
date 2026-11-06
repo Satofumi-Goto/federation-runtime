@@ -22,6 +22,10 @@ function mock({egress=false,adminStatus=503,registry=false,keys=false,leak=false
   const path=new URL(url).pathname;
   calls.push(init.method+' '+path);
   if(path==='/healthz')return response({service:'federation-firewall-gateway',stage:'shadow-hold',productionReady:false,cutoverEnabled:false});
+  if(path==='/_status/readiness')return registry?response({productionReady:false,storageIndependent:false,authenticatedE2E:false,dnsVerified:false,cutoverEnabled:false,verifiedCutovers:0})
+   :response({ok:false,reason:'not-found'},404);
+  if(path==='/git-head.json')return response({sha:'a'.repeat(40),repository:'Satofumi-Goto/federation-runtime',canonicalCommit:'b'.repeat(40)});
+  if(path==='/_status/parent')return response({schema:'federation.runtime-child/1',parentVerified:false});
   if(path==='/api/clients')return registry?response({appCount:10,signing:{version:'federation-firewall-hmac/1'},
    clients:clients.map(id=>({id,keyConfigured:keys&&id==='activity',gatewayEgressActive:false,...(leak?{key:'A'.repeat(43)}:{})}))})
    :response({ok:false,reason:'not-found'},404);
@@ -48,7 +52,8 @@ test('Phase 0 verifies real safe interface without sending provider requests',as
  assert.equal(r.ok,true);
  assert.equal(r.routes,3);assert.equal(r.directExceptions,6);
  assert.equal(r.upstreamRequests,0);
- assert.equal(calls.length,8);
+ assert.equal(calls.length,9);
+ assert.equal(r.statusEndpoints,'pending-manual-render-deploy');
  assert.equal(r.clientRegistry,'pending-manual-render-deploy');
  assert.deepEqual(calls.filter(x=>x.endsWith('/api/v1/shadow/probe')),[
   'GET /api/v1/shadow/probe','POST /api/v1/shadow/probe']);
@@ -62,5 +67,7 @@ test('Verifier checks the ten-app registry once deployed and never accepts publi
  const r=await verifyFirewallPhase0(mock({registry:true,keys:true}).fetchImpl);
  assert.equal(r.clientRegistry,'deployed');
  assert.deepEqual(r.configuredClientIds,['activity']);
+ assert.equal(r.statusEndpoints,'deployed');
+ assert.equal(r.servedSha,'a'.repeat(40));
  await assert.rejects(()=>verifyFirewallPhase0(mock({registry:true,keys:true,leak:true}).fetchImpl),/key material/);
 });

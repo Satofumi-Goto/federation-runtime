@@ -1,6 +1,6 @@
 // Prevent accidental changes to the independently deployed public distribution
 // that have not been reviewed and mirrored from the canonical private repository.
-// This checks the pinned 19 files; it does NOT fetch private upstream at CI time.
+// This checks the pinned 27 files; it does NOT fetch private upstream at CI time.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync,readdirSync,lstatSync} from 'node:fs';
@@ -25,7 +25,7 @@ export function verifyAttestation(manifest,files){
  const expected=manifest.files;
  assert.ok(expected&&typeof expected==='object'&&!Array.isArray(expected));
  const names=Object.keys(expected).sort();
- assert.equal(names.length,19,'unexpected canonical source count');
+ assert.equal(names.length,27,'unexpected canonical source count');
  assert.deepEqual([...files.keys()].sort(),names,'unreviewed additions or deletions');
  for(const name of names){
   assert.ok(name===name.replaceAll('\\','/')&&!name.includes('..')&&!name.startsWith('/'),
@@ -51,9 +51,23 @@ function walkFiles(dir,base=root,out=new Map()){
  }
  return out;
 }
+// Canonical files outside the service tree that the mirrored tests read.
+export const SUPPORTING_FILES=Object.freeze(['config/firewall-gateway-migration.json']);
+export function verifySupporting(manifest,read){
+ const expected=manifest.supportingFiles;
+ assert.ok(expected&&typeof expected==='object'&&!Array.isArray(expected),'missing supporting attestation');
+ assert.deepEqual(Object.keys(expected).sort(),[...SUPPORTING_FILES].sort(),'unreviewed supporting file set');
+ for(const name of SUPPORTING_FILES){
+  assert.match(expected[name],/^[a-f0-9]{40}$/);
+  assert.equal(gitBlobSha(read(name)),expected[name],'unreviewed blob change: '+name);
+ }
+ return SUPPORTING_FILES.length;
+}
 export function verifyOnDisk(){
  const manifest=JSON.parse(readFileSync(join(root,MANIFEST_NAME),'utf8'));
- return verifyAttestation(manifest,walkFiles(root));
+ const result=verifyAttestation(manifest,walkFiles(root));
+ const supportingFiles=verifySupporting(manifest,name=>readFileSync(join(here,name),'utf8'));
+ return {...result,supportingFiles};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
  try{console.log(JSON.stringify(verifyOnDisk()));}

@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "mode": "shadow-hold",
+  "autoCutover": false,
+  "autoRetire": false,
+  "legacyRoutesEnabled": true,
+  "gates": [
+    "gateway-live",
+    "signed-e2e",
+    "data-parity",
+    "ui-verified",
+    "rollback-proved",
+    "stability-proved",
+    "retirement-reviewed"
+  ],
+  "candidateRoutes": [
+    {
+      "id": "japan-holidays",
+      "owner": "activity",
+      "gateway": false,
+      "legacy": true,
+      "state": "HOLD"
+    },
+    {
+      "id": "jma-earthquake-list",
+      "owner": "activity",
+      "gateway": false,
+      "legacy": true,
+      "state": "HOLD"
+    },
+    {
+      "id": "open-meteo-tokyo",
+      "owner": "activity",
+      "gateway": false,
+      "legacy": true,
+      "state": "HOLD"
+    }
+  ],
+  "directExceptions": [
+    "google-maps-js",
+    "google-places",
+    "personal-calendar-auth",
+    "fleet-dispatch-control",
+    "booking-payment",
+    "map-24h-forecast"
+  ],
+  "integrationEvidence": {
+    "activityShadowFunction": {
+      "repo": "Satofumi-Goto/life-transaction-console",
+      "function": "activityFirewallShadowCompare",
+      "deployedAt": "2026-11-05",
+      "reviewedPr": "https://github.com/Satofumi-Goto/life-transaction-console/pull/124",
+      "run": "https://github.com/Satofumi-Goto/life-transaction-console/actions/runs/42005372682",
+      "sourceSha": "bec553f200f14d55ce47816bebde48c8658601d0",
+      "publicGet": 405,
+      "signedProductionE2e": false,
+      "providerParity": false,
+      "activityShadowFlagEnabled": true,
+      "activityOwnerConfigured": true,
+      "ownerAuthenticated": false,
+      "ownerAuthorizationStatus": 403,
+      "ownerAuthorizationReason": "forbidden",
+      "ownerProbeRun": "https://github.com/Satofumi-Goto/life-transaction-console/actions/runs/42026179293",
+      "signedGatewayAccepted": false,
+      "signedGatewayProof": "not-verified; denied before forwarding"
+    },
+    "firewall": {
+      "origin": "https://federation-firewall-gateway.onrender.com",
+      "lastHealth": "HTTP 200 shadow-hold, cutover false, canaryEgressEnabled false after expiry release",
+      "configuredClients": true,
+      "egressEnabled": false,
+      "sourceSecurityPr": "https://github.com/Satofumi-Goto/federation-portal/pull/1005",
+      "deployedDistributionPr": "https://github.com/Satofumi-Goto/federation-runtime/pull/14",
+      "deployedDistributionSha": "e5bde66b800a45cbd83962c0f8b9cd5699fb504b",
+      "renderDeployId": "dep-dbmkld2jnfac73aop1b0",
+      "canaryExpiryRequired": true,
+      "canaryMaxWindowSeconds": 600,
+      "distributedRateAndReplayVerified": false,
+      "immutableAuditVerified": false,
+      "independentStatusEndpoints": {
+        "paths": [
+          "/healthz",
+          "/git-head.json",
+          "/_status/parent",
+          "/_status/readiness"
+        ],
+        "parentOrigin": "https://federation-runtime.com",
+        "servedShaSource": "RENDER_GIT_COMMIT",
+        "readiness": {
+          "backendIndependent": true,
+          "storageIndependent": false,
+          "authenticatedE2E": false,
+          "dnsVerified": false,
+          "productionReady": false
+        },
+        "publiclyServed": false,
+        "liveCheckedAt": "2026-11-06T05:05:00Z",
+        "liveBeforeDeploy": {
+          "/healthz": 200,
+          "/api/status": 200,
+          "/api/catalog": 200,
+          "/git-head.json": "client-error (未実装)",
+          "/_status/readiness": "client-error (未実装)"
+        }
+      }
+    },
+    "verifiedCutovers": 0,
+    "githubOneShotHolidayCanary": {
+      "kind": "testing-only",
+      "source": "GitHub Actions OIDC",
+      "run": "https://github.com/Satofumi-Goto/federation-runtime/actions/runs/42015685236",
+      "deployedSha": "6caa9db60317678011b1a30bbb36b4486682b46c",
+      "checkedAt": "2026-11-05T11:03:13.774Z",
+      "records": 54,
+      "hashSha256": "88ac1b885bf337688100384f5e2db65c1d58cdadbd9dfbb4b269da7ba7e68983",
+      "gatewayProviderParity": true,
+      "githubOidcSigned": true,
+      "activityHmacSignedE2e": false,
+      "appUiParity": false,
+      "networkWafVerified": false,
+      "cutover": false,
+      "legacyRetained": true,
+      "canaryDisabledAfter": true
+    },
+    "directoryContract": {
+      "publicCatalogOwner": "life-transaction-console",
+      "consumerInspector": "seneschal",
+      "consumerInspectorPr": "https://github.com/Satofumi-Goto/seneschal/pull/863",
+      "sourcePickerPreserved": true,
+      "unselectedCatalogInspection": true,
+      "consumerPublishedUiVerified": false,
+      "firewallIsCatalogOwner": false,
+      "sourceClassificationNotProofOfConnectivity": true
+    },
+    "activityHolidaySignedCanary": {
+      "kind": "diagnostic-only-not-user-facing",
+      "appOwner": "activity",
+      "function": "activityFirewallGithubCanary",
+      "sourceInspectionRun": "https://github.com/Satofumi-Goto/life-transaction-console/actions/runs/42148204864",
+      "ownerOidcHmacAuthRun": "https://github.com/Satofumi-Goto/life-transaction-console/actions/runs/42148588619",
+      "signedFullParityRun": "https://github.com/Satofumi-Goto/life-transaction-console/actions/runs/42149220467",
+      "verifiedAt": "2026-11-06T02:16:13.404Z",
+      "gatewayReached": true,
+      "activityHmacAuthenticated": true,
+      "gatewayProviderParity": true,
+      "recordCount": 54,
+      "sha256": "88ac1b885bf337688100384f5e2db65c1d58cdadbd9dfbb4b269da7ba7e68983",
+      "liveUserCutover": false,
+      "legacyRetained": true,
+      "userFacingUiVerified": false,
+      "rollbackDrillProved": false,
+      "sustainedStabilityVerified": false,
+      "networkWafVerified": false
+    },
+    "backendSourceSync": {
+      "sourceRepo": "Satofumi-Goto/life-transaction-console",
+      "signedSyncRun": "https://github.com/Satofumi-Goto/life-transaction-console/actions/runs/42148204864",
+      "fullyContentSynced": true,
+      "fullyPathSynced": true,
+      "threeFunctionsVerified": true,
+      "backendWritesDuringAudit": 0,
+      "secretValuesExposed": false
+    }
+  }
+}

@@ -8,9 +8,9 @@ const files=new Map(Object.keys(manifest.files).map(name=>[
  name,readFileSync(new URL('../../services/firewall-gateway/'+name,import.meta.url),'utf8')
 ]));
 
-test('pinned canonical source includes all 19 reviewed files verbatim',()=>{
+test('pinned canonical source includes all 27 reviewed files verbatim',()=>{
  assert.equal(verifyOnDisk().ok,true);
- assert.equal(verifyAttestation(manifest,files).verifiedFiles,19);
+ assert.equal(verifyAttestation(manifest,files).verifiedFiles,27);
 });
 
 test('Git content-object hash calculation is stable',()=>{
@@ -40,4 +40,12 @@ test('deny path traversal even if attacker invents a matching blob hash',()=>{
  values.delete('ui.mjs');
  values.set('../other/ui.mjs',files.get('ui.mjs'));
  assert.throws(()=>verifyAttestation({...manifest,files:hashes},values),/unsafe pinned path/);
+});
+
+test('supporting canonical config is pinned by exact blob and cannot drift',async()=>{
+ const {verifySupporting}=await import('../verify-firewall-source-attestation.mjs');
+ const text=readFileSync(new URL('../../config/firewall-gateway-migration.json',import.meta.url),'utf8');
+ assert.equal(verifySupporting(manifest,()=>text),1);
+ assert.throws(()=>verifySupporting(manifest,()=>text+' '),/unreviewed blob change/);
+ assert.throws(()=>verifySupporting({...manifest,supportingFiles:{}},()=>text),/supporting file set/);
 });
