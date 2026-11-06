@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Render 配備と公開確認（Node 24、依存なし）。
 // - RENDER_API_KEY が空なら配備せず skip（終了コード0）。
-// - 配備対象は render.yaml のサービス名（render.yaml が無いrepoは RENDER_SERVICE_NAMES）だけ。
+// - 配備対象は render.yaml のサービス名（RENDER_BLUEPRINT に空白・カンマ区切りで複数指定可。どれも無いrepoは RENDER_SERVICE_NAMES）だけ。
 // - サービスの作成・削除・環境変数変更・DNS切替はしない。
 import {readFileSync, appendFileSync, existsSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
@@ -49,6 +49,16 @@ export function pickService(list, name) {
   const rows = Array.isArray(list) ? list : [];
   const found = rows.map((r) => (r && r.service) || r).filter((s) => s && s.name === name);
   return found.length === 1 ? found[0] : found.length > 1 ? {ambiguous: found.map((s) => s.id)} : null;
+}
+
+// Render の一覧は [{deploy:{...}}] 形式。コミットIDが一致する最新の配備だけを採る。
+export function pickDeployForCommit(list, sha) {
+  if (!Array.isArray(list)) return null;
+  for (const item of list) {
+    const d = item && (item.deploy || item);
+    if (d && typeof d.id === 'string' && d.commit && d.commit.id === sha) return d;
+  }
+  return null;
 }
 
 export function classifyDeploy(status) {
@@ -121,11 +131,20 @@ async function deployOne({key, name, sha, pollMs, timeoutMs, verifyTries}) {
   r.url = serviceUrl(service);
 
   const dep = await call(key, 'POST', `/services/${service.id}/deploys`, {commitId: sha});
-  if (dep.status !== 201 && dep.status !== 200 || !dep.json || !dep.json.id) {
+  const until = Date.now() + timeoutMs;
+  // 202 は受付のみ（配備オブジェクトが返らない）。同じコミットの配備を一覧から探して追跡する。
+  if (dep.status === 202 && !(dep.json && dep.json.id)) {
+    dep.json = null;
+    while (!dep.json && Date.now() < until) {
+      const list = await call(key, 'GET', `/services/${service.id}/deploys?limit=20`);
+      if (list.status === 200) dep.json = pickDeployForCommit(list.json, sha);
+      if (!dep.json) await sleep(pollMs);
+    }
+    if (!dep.json) { r.verdict = '失敗（配備開始 HTTP 202 後、対象コミットの配備が見つからない）'; r.failed = true; return r; }
+  } else if (![200, 201, 202].includes(dep.status) || !dep.json || !dep.json.id) {
     r.verdict = `失敗（配備開始 HTTP ${dep.status}）`; r.failed = true; return r;
   }
   let status = dep.json.status;
-  const until = Date.now() + timeoutMs;
   while (classifyDeploy(status) === 'pending' && Date.now() < until) {
     await sleep(pollMs);
     const s = await call(key, 'GET', `/services/${service.id}/deploys/${dep.json.id}`);
@@ -167,8 +186,8 @@ export async function main(env = process.env) {
   if (!/^[0-9a-f]{40}$/.test(sha)) { write(summaryMarkdown({sha, results: [], note: '失敗：配備するSHAが不正'})); return 1; }
 
   let names = [];
-  const file = env.RENDER_BLUEPRINT || 'render.yaml';
-  if (existsSync(file)) names = parseServiceNames(readFileSync(file, 'utf8'));
+  const files = String(env.RENDER_BLUEPRINT || 'render.yaml').split(/[\s,]+/).filter(Boolean).filter((f) => existsSync(f));
+  if (files.length) names = [...new Set(files.flatMap((f) => parseServiceNames(readFileSync(f, 'utf8'))))];
   else names = String(env.RENDER_SERVICE_NAMES || '').split(/[\s,]+/).filter(Boolean);
   if (!names.length) { write(summaryMarkdown({sha, results: [], note: '失敗：配備対象のサービス名が無い'})); return 1; }
 
