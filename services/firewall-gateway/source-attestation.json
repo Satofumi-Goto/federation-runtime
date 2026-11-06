@@ -1,0 +1,25 @@
+{
+  "schema": "federation.firewall-source-attestation/1",
+  "canonicalRepository": "Satofumi-Goto/federation-portal",
+  "canonicalCommit": "edf68a5c7c6fd46e3956f9051165db6b181d40c5",
+  "sourcePath": "services/firewall-gateway",
+  "distributionRepository": "Satofumi-Goto/federation-runtime",
+  "verification": "full-file-Git-blob-sha1",
+  "files": {
+    "README.md": "d62d1665d0994fafb4a30db92c288041deaadd0f",
+    "access.mjs": "cbf067127a3c7884057d91f2fc4ba1f5a4be3898",
+    "auth.mjs": "f91a4bc8037880924c5e8ec5b7a12591b1b98580",
+    "egress.mjs": "0d080a97097e3609756d444f958929273b8690bb",
+    "githubCanary.mjs": "3e70f51d652ec24355723fe3d04ef69b6304e1ee",
+    "package.json": "99d449cc8a3c84cd2ef8b1c7fd11b23e60827095",
+    "policy.mjs": "11aac4062acf1fbb3bd9f0cd96f55584ffcb8480",
+    "server.mjs": "73056062fe4d249c4897f67df3f1cfc5559e9f19",
+    "test/audit.test.mjs": "8ac0219998306bd92707b48c644374c89b38cda4",
+    "test/canary-expiry.test.mjs": "f98603bc3524300a31f246a8589b617af4406c81",
+    "test/disabled.test.mjs": "51662d264e486dfa1dbb9878c0922726c06b0a94",
+    "test/github-canary.test.mjs": "af7a239c65b9d0c4fe82d3b450e4b830f6c5bdd9",
+    "test/policy.test.mjs": "12c585a7562c598c9fdaaaa6649117ef7de7d01d",
+    "test/server.test.mjs": "e655f047ca5ec3310d831d0b01a3d4e086df2ec5",
+    "ui.mjs": "9ed2ca9aa697e042db38a1cead75fb01132c78cc"
+  }
+}
