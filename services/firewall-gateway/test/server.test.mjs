@@ -62,7 +62,7 @@ test('independent origin status endpoints report served SHA, parent and honest r
   const parent=await (await fetch(root+'/_status/parent')).json();
   assert.deepEqual(parent,{schema:'federation.runtime-child/1',service:'firewall-standalone',
    parentOrigin:'https://federation-runtime.com',origin:'https://federation-firewall-gateway.onrender.com',parentVerified:false,
-   gatewayService:'federation-firewall-gateway'});
+   productionReady:false,authenticatedE2E:false,dnsVerified:false,gatewayService:'federation-firewall-gateway'});
   const ready=await (await fetch(root+'/_status/readiness')).json();
   // Shared family contract (#1007): fixed names and types; extra fields are additive.
   assert.equal(ready.schema,'federation.independent-readiness/1');assert.equal(ready.app,'firewall');
