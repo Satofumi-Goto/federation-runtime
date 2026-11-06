@@ -5,10 +5,10 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 - Canonical upstream source SHA: `045c8a9e77ecdab1f434ffbfdfd0dbbca3a26479`.
 - Mirrored path: `services/firewall-gateway/`. Review code changes upstream before refreshing this distribution in a separate PR.
 - No credentials, secrets, user records, private integrations, or paid calls are included. This repo is public.
-- Render setup: Node 22, branch `main`, Singapore, **free**, auto-deploy **OFF**.
+- Render setup: Node 24, branch `main`, Singapore, **free**, auto-deploy **OFF**.
 - Build command: `node --test services/firewall-gateway/test/*.test.mjs`
 - Start command: `node services/firewall-gateway/server.mjs`
-- Environment: `NODE_VERSION=22`, `HOST=0.0.0.0`, `FIREWALL_CANARY_EGRESS=false`.
+- Environment: `NODE_VERSION=24`, `HOST=0.0.0.0`, `FIREWALL_CANARY_EGRESS=false`.
 - Keep `FIREWALL_CLIENT_KEYS_JSON`, `FIREWALL_ACCESS_TEAM`, `FIREWALL_ACCESS_AUD`, and `FIREWALL_OWNER_EMAIL` unset until separate protected configuration. No tokens or real user data should be committed or displayed.
 - Initial public read-only endpoints: `/`, `/healthz`, `/api/status`, `/api/catalog`. `/admin` and unsigned `/api/v1/shadow/probe` must fail closed.
 - Existing Base44 sites, Google Maps, calendars, bookings, vehicle dispatch, provider URLs and keys remain unchanged. Production traffic cutover is **not** enabled.

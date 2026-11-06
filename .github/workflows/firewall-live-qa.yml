@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
       - run: node --test scripts/tests/firewall-*.test.mjs
   public-live:
     if: github.event_name != 'pull_request'
@@ -34,6 +34,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
       - name: Verify public GET, security headers, locked egress and denied unsigned POST
         run: node scripts/verify-firewall-phase0-live.mjs
