@@ -10,7 +10,7 @@ const files=new Map(Object.keys(manifest.files).map(name=>[
 
 test('pinned canonical source includes all 38 reviewed files verbatim',()=>{
  assert.equal(verifyOnDisk().ok,true);
- assert.equal(verifyAttestation(manifest,files).verifiedFiles,36);
+ assert.equal(verifyAttestation(manifest,files).verifiedFiles,38);
 });
 
 test('Git content-object hash calculation is stable',()=>{
