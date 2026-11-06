@@ -6,6 +6,7 @@ import {createAuthenticator} from './auth.mjs';
 import {createAccessVerifier} from './access.mjs';
 import {createEgress} from './egress.mjs';
 import {createGithubCanaryVerifier} from './githubCanary.mjs';
+import {createAssistant,parseAssistantCommand,ASSISTANT_PATH,ASSISTANT_MAX_BODY,ASSISTANT_POLICY} from './assistant.mjs';
 import {publicCatalog,publicClients,SIGNING_CONTRACT} from './policy.mjs';
 import {renderConsole} from './ui.mjs';
 
@@ -44,6 +45,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  const access=createAccessVerifier({env,fetchImpl,clock});
  const egress=createEgress({env,fetchImpl,clock});
  const githubCanary=createGithubCanaryVerifier({env,fetchImpl,clock});
+ const assistant=createAssistant({env,fetchImpl,clock});
  const server=http.createServer({maxHeaderSize:8192},async(req,res)=>{
   const path=(req.url||'').split('?')[0];
   // Probe audit is metadata only. Never log request bodies, client secrets,
@@ -55,6 +57,14 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       method:req.method,status:res.statusCode,client:probeClient,routeId:probeRoute,
     }));}catch{/* Observability must not interrupt responses. */}
   });
+  // Assistant audit: never record question, persona, answer, signature or IP.
+  let askClient=null,askCharacter=null;
+  if(path===ASSISTANT_PATH)res.once('finish',()=>{
+    try{auditSink(JSON.stringify({
+      type:'firewall.assistant.request',at:new Date(clock()).toISOString(),
+      method:req.method,status:res.statusCode,client:askClient,characterId:askCharacter,
+    }));}catch{/* Observability must not interrupt responses. */}
+  });
   if(!req.url||req.url.length>1024)return reply(res,414,{ok:false,reason:'invalid-target'});
   try{
    if(req.method==='GET'&&path==='/healthz')
@@ -64,11 +74,13 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     return reply(res,200,{service:'federation-firewall-gateway',stage:'shadow-hold',
       configuredClients:auth.configured,configuredClientIds:[...auth.configuredIds()].sort(),
       registeredApps:publicClients().appCount,canaryEgressEnabled:egress.liveEnabled,
+      assistantEnabled:assistant.enabled,
       productionReady:false,cutoverEnabled:false,legacyConnectionsPreserved:true});
    if(req.method==='GET'&&path==='/api/catalog')
     return reply(res,200,publicCatalog());
    if(req.method==='GET'&&path==='/api/clients')
-    return reply(res,200,{...publicClients(auth.configuredIds()),signing:SIGNING_CONTRACT});
+    return reply(res,200,{...publicClients(auth.configuredIds()),signing:SIGNING_CONTRACT,
+      assistant:{...ASSISTANT_POLICY,enabled:assistant.enabled}});
    if(req.method==='GET'&&(path==='/'||path==='/console')){
     const nonce=randomBytes(18).toString('base64url');
     return page(res,200,renderConsole({nonce,canaryEnabled:egress.liveEnabled,configuredIds:auth.configuredIds()}),nonce);
@@ -101,6 +113,25 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
     probeClient='github-actions';probeRoute='japan-holidays';
     const result=await egress.probe('federation','japan-holidays');
+    return reply(res,result.status,result.result,
+      result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});
+   }
+   if(path===ASSISTANT_PATH){
+    if(req.headers.origin||req.headers.cookie||req.headers.authorization)
+     return reply(res,403,{ok:false,reason:'server-to-server-only'});
+    if(req.method!=='POST')return reply(res,405,{ok:false,reason:'method-not-allowed'});
+    if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
+     return reply(res,415,{ok:false,reason:'json-required'});
+    let body;
+    try{body=await limitedBody(req,ASSISTANT_MAX_BODY);}
+    catch{return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});}
+    const identity=auth.verify(req,body,path);
+    if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
+    askClient=identity.client;
+    const parsed=parseAssistantCommand(body);
+    if(!parsed.ok)return reply(res,parsed.status,{ok:false,reason:parsed.reason});
+    askCharacter=parsed.command.characterId;
+    const result=await assistant.ask(identity.client,parsed.command);
     return reply(res,result.status,result.result,
       result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});
    }
@@ -139,7 +170,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  server.headersTimeout=12000;
  server.keepAliveTimeout=3500;
  server.on('clientError',(_error,socket)=>{if(socket.writable)socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');});
- return {server,auth,access,egress,githubCanary};
+ return {server,auth,access,egress,githubCanary,assistant};
 }
 export function startServer(env=process.env){
  const port=Number(env.PORT||8789);

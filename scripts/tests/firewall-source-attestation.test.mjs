@@ -8,9 +8,9 @@ const files=new Map(Object.keys(manifest.files).map(name=>[
  name,readFileSync(new URL('../../services/firewall-gateway/'+name,import.meta.url),'utf8')
 ]));
 
-test('pinned canonical source includes all 17 reviewed files verbatim',()=>{
+test('pinned canonical source includes all 19 reviewed files verbatim',()=>{
  assert.equal(verifyOnDisk().ok,true);
- assert.equal(verifyAttestation(manifest,files).verifiedFiles,17);
+ assert.equal(verifyAttestation(manifest,files).verifiedFiles,19);
 });
 
 test('Git content-object hash calculation is stable',()=>{
