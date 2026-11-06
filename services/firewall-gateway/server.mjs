@@ -73,17 +73,22 @@ export function parentStatus(origin){
 // Only facts with evidence are true. Zero-dependency Node service with no
 // Base44 SDK/backend: backendIndependent. No durable store, no app-UI signed
 // E2E, no custom DNS: all false. productionReady stays false (shadow-hold).
-export function readinessStatus(){
+export function readinessStatus({env=process.env,distributed=false}={}){
+ const sharedLive=distributed&&['render-valkey','redis-rest'].includes(env.FIREWALL_STORE);
+ const storageReason=sharedLive
+  ?'shared replay and rate budgets are configured, but durability and immutable audit retention remain unverified; free Render Valkey loses state on restart'
+  :'no verified durable shared store: signed replay, rate and audit require a configured distributed provider';
+
  // Shared family contract federation.independent-readiness/1; extra fields are additive.
  return {schema:'federation.independent-readiness/1',app:FAMILY_APP_ID,service:'federation-firewall-gateway',
   stage:'shadow-hold',productionReady:false,frontendHostIndependent:true,backendIndependent:true,storageIndependent:false,
   authenticatedE2E:false,dnsVerified:false,cutoverEnabled:false,verifiedCutovers:0,
   evidence:{frontendHostIndependent:'operations console and status pages are served by this Node process, not Base44',
    backendIndependent:'node-only server, no Base44 SDK or backend; served from its own Render origin'},
-  pending:{storageIndependent:'no durable store: replay/rate/audit are per-process memory and stdout',
+  pending:{storageIndependent:storageReason,
    authenticatedE2E:'no user-facing signed app-to-gateway E2E; GitHub OIDC and Activity HMAC canaries are diagnostic only',
    dnsVerified:'onrender.com subdomain only; no custom domain or DNS verification',
-   productionReady:'shadow-hold; network WAF, distributed replay/rate limits and immutable audit not deployed'}};
+   productionReady:'shadow-hold; network WAF, durable audit and user-facing cutover not verified'}};
 }
 export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.now,auditSink=console.info}={}){
  const auth=createAuthenticator({env,clock});
@@ -155,7 +160,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
    if(req.method==='GET'&&path==='/_status/parent')
     return reply(res,200,parentStatus(selfOrigin));
    if(req.method==='GET'&&path==='/_status/readiness')
-    return reply(res,200,readinessStatus());
+    return reply(res,200,readinessStatus({env,distributed:!!sharedStore}));
    if(req.method==='GET'&&path==='/api/status')
     return reply(res,200,{service:'federation-firewall-gateway',stage:'shadow-hold',
       configuredClients:auth.configured,configuredClientIds:[...auth.configuredIds()].sort(),
