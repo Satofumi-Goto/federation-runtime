@@ -39,3 +39,11 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 - Expired requests, expired cached responses, and upstream responses returning after expiration are rejected. A restart with an old timestamp cannot reopen traffic.
 - Render is initially configured for egress OFF. Publishing this source does not require altering secrets or arming a canary. Any time-boxed future test also requires signed authorization and a post-test OFF verification.
 - The local replay cache, stdout audit, single instance budget and Render routing are not a production WAF or shared immutable ledger. Separate security work remains required before any permanent switching.
+
+
+## Immutable full-source release gate
+
+- `services/firewall-gateway/source-attestation.json` pins **all 15** code, UI, policy, package and unit-test files to their canonical Git Blob SHA from `Satofumi-Goto/federation-portal@edf68a5c7c6fd46e3956f9051165db6b181d40c5`.
+- `node scripts/verify-firewall-source-attestation.mjs` refuses any source-body change, missing file, newly introduced file, path traversal, or altered provenance. CI executes this gate alongside the existing Firewall security regression suite.
+- When a new canonical upstream PR has been reviewed and merged, refresh the 15-file manifest from the **exact approved upstream commit** and mirror the corresponding Git Blobs in the **same reviewed PR**. Never just update expected hashes to make a modified distribution pass.
+- This gate does not have access to the private canonical repository at runtime. It verifies the local distribution against the reviewed upstream source pin, and **cannot detect newer unmirrored upstream commits without a fresh cross-repository inspection**.
