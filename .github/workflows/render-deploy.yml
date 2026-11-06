@@ -1,0 +1,43 @@
+name: Render deploy
+# Firewall Gateway は自動配備OFF（FIREWALL_DEPLOYMENT.md）。手動起動のみで、指定SHAを配備し公開URLで確認する。
+# RENDER_API_KEY が未設定なら配備せず成功（skip）で終える。サービスの作成・削除・環境変数変更・DNS切替はしない。
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/render-deploy.yml
+      - scripts/render-deploy/**
+permissions:
+  contents: read
+concurrency:
+  group: render-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test scripts/render-deploy/render-deploy.test.mjs
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test scripts/render-deploy/render-deploy.test.mjs
+      - name: Deploy and verify
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          DEPLOY_SHA: ${{ github.sha }}
+          RENDER_SERVICE_NAMES: federation-firewall-gateway
+        run: node scripts/render-deploy/render-deploy.mjs
