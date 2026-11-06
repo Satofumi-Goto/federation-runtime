@@ -1,6 +1,6 @@
 // Prevent accidental changes to the independently deployed public distribution
 // that have not been reviewed and mirrored from the canonical private repository.
-// This checks the pinned 29 files; it does NOT fetch private upstream at CI time.
+// This verifies 38 exact canonical files; it does NOT fetch private upstream at CI time.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync,readdirSync,lstatSync} from 'node:fs';
