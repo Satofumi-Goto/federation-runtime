@@ -1,9 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync,existsSync} from 'node:fs';
 import {compareHolidays,holidayRouteDecision,REQUIRED_EVIDENCE,HOLIDAY_SOURCE} from '../holidayParity.mjs';
 
-const migration=JSON.parse(readFileSync(new URL('../../../config/firewall-gateway-migration.json',import.meta.url),'utf8'));
+// Canonical repo: read the real migration config. Distribution repo has no
+// config/ directory, so it uses the same HOLD shape as a fixed fixture.
+const configUrl=new URL('../../../config/firewall-gateway-migration.json',import.meta.url);
+const HOLD_FIXTURE={candidateRoutes:['japan-holidays','jma-earthquake-list','open-meteo-tokyo']
+ .map(id=>({id,owner:'activity',gateway:false,legacy:true,state:'HOLD'}))};
+const migration=existsSync(configUrl)?JSON.parse(readFileSync(configUrl,'utf8')):HOLD_FIXTURE;
 const now=Date.parse('2026-11-06T00:00:00.000Z');
 const legacy={'2026-11-23':'勤労感謝の日','2026-11-03':'文化の日'};
 const packet=data=>({ok:true,mode:'shadow-only',routeId:'japan-holidays',provider:'holidays-jp',
