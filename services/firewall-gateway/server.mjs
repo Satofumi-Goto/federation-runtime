@@ -254,7 +254,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     if(req.headers.origin||req.headers.cookie||req.headers.authorization)
       return reply(res,403,{ok:false,reason:'server-to-server-only'});
     if(req.method!=='POST')return reply(res,405,{ok:false,reason:'method-not-allowed'});
-    if(!/^application\\/json(?:\\s*;|$)/i.test(req.headers['content-type']||''))
+    if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
       return reply(res,415,{ok:false,reason:'json-required'});
     let body;
     try{body=await limitedBody(req,64);}
