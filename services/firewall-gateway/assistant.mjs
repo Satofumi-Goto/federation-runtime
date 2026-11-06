@@ -1,5 +1,5 @@
 import {readBoundedJson} from './egress.mjs';
-import {CLIENT_IDS,CLIENT_ALIASES} from './policy.mjs';
+import {CLIENT_IDS} from './policy.mjs';
 // Shared avatar-question intake for the nine Federation family apps.
 // Request/response fields follow the assistant answer contract
 // (Satofumi-Goto/seneschal docs/qa/assistant-answer-contract.md):
@@ -55,7 +55,6 @@ const CHARACTER_SCALES=Object.freeze(['directness','humor','empathy','actionBias
 const CHARACTER_KEYS=new Set([...Object.keys(CHARACTER_TEXT),...Object.keys(CHARACTER_LISTS),...CHARACTER_SCALES]);
 const REQUEST_KEYS=new Set(['appId','question','language','history','context','character','page','requestId']);
 
-export const resolveAppId=appId=>Object.hasOwn(CLIENT_ALIASES,appId)?CLIENT_ALIASES[appId]:appId;
 
 function parseCharacter(c){
  if(c===null||c===undefined)return {ok:true,character:null};
@@ -109,7 +108,7 @@ export function parseAssistantCommand(body){
  const requestId=typeof q.requestId==='string'&&/^[A-Za-z0-9_.:-]{1,64}$/.test(q.requestId)?q.requestId:null;
  if(q.requestId!==undefined&&requestId===null)return {ok:false,error:'invalid_question',requestId:null};
  if(Object.keys(q).some(k=>!REQUEST_KEYS.has(k)))return {ok:false,error:'invalid_question',requestId};
- if(typeof q.appId!=='string'||!CLIENT_IDS.includes(resolveAppId(q.appId)))
+ if(typeof q.appId!=='string'||!CLIENT_IDS.includes(q.appId))
   return {ok:false,error:'invalid_app',requestId};
  const L=ASSISTANT_LIMITS;
  const history=q.history===undefined?[]:q.history;
@@ -122,7 +121,7 @@ export function parseAssistantCommand(body){
   return {ok:false,error:'invalid_question',requestId};
  const character=parseCharacter(q.character);
  if(!character.ok)return {ok:false,error:'invalid_question',requestId};
- return {ok:true,command:{appId:resolveAppId(q.appId),language:q.language,question:q.question.trim(),
+ return {ok:true,command:{appId:q.appId,language:q.language,question:q.question.trim(),
   history:history.map(m=>({role:m.role,content:m.content})),context:(q.context||'').trim(),
   page:(q.page||'').trim(),character:character.character,requestId}};
 }

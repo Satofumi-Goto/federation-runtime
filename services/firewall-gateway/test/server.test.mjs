@@ -60,9 +60,16 @@ test('independent origin status endpoints report served SHA, parent and honest r
   assert.equal(head.sourceState,'render-git-commit');assert.equal(head.branch,'main');
   assert.equal(head.canonicalRepository,'Satofumi-Goto/federation-portal');
   const parent=await (await fetch(root+'/_status/parent')).json();
-  assert.deepEqual(parent,{schema:'federation.runtime-child/1',service:'federation-firewall-gateway',
-   parentOrigin:'https://federation-runtime.com',origin:'https://federation-firewall-gateway.onrender.com',parentVerified:false});
+  assert.deepEqual(parent,{schema:'federation.runtime-child/1',service:'firewall-standalone',
+   parentOrigin:'https://federation-runtime.com',origin:'https://federation-firewall-gateway.onrender.com',parentVerified:false,
+   gatewayService:'federation-firewall-gateway'});
   const ready=await (await fetch(root+'/_status/readiness')).json();
+  // Shared family contract (#1007): fixed names and types; extra fields are additive.
+  assert.equal(ready.schema,'federation.independent-readiness/1');assert.equal(ready.app,'firewall');
+  for(const key of ['productionReady','frontendHostIndependent','backendIndependent','storageIndependent','authenticatedE2E','dnsVerified'])
+   assert.equal(typeof ready[key],'boolean',key);
+  assert.equal(ready.frontendHostIndependent,true);assert.ok(ready.evidence.frontendHostIndependent);
+  assert.match(await (await fetch(root+'/')).text(),/Firewall Gateway/);
   assert.equal(ready.productionReady,false);assert.equal(ready.backendIndependent,true);
   assert.equal(ready.storageIndependent,false);assert.equal(ready.authenticatedE2E,false);
   assert.equal(ready.dnsVerified,false);assert.equal(ready.cutoverEnabled,false);assert.equal(ready.verifiedCutovers,0);
@@ -82,4 +89,23 @@ test('git-head.json never invents a SHA when the platform value is missing or ma
  const pinned=gitHead({RENDER_GIT_COMMIT:'A'.repeat(40),RENDER_GIT_BRANCH:'feature'},'b'.repeat(40));
  assert.equal(pinned.sha,'a'.repeat(40));assert.equal(pinned.branch,null);
  assert.equal(pinned.canonicalCommit,'b'.repeat(40));
+});
+test('healthz answers plain ok for text/plain monitors and keeps JSON by default',async()=>{
+ const app=createGatewayServer({env:{}});
+ await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
+ const root='http://127.0.0.1:'+app.server.address().port;
+ try{
+  const plain=await fetch(root+'/healthz',{headers:{accept:'text/plain'}});
+  assert.equal(plain.status,200);
+  assert.match(plain.headers.get('content-type'),/^text\/plain/);
+  assert.equal(plain.headers.get('cache-control'),'no-store');
+  assert.equal(plain.headers.get('x-content-type-options'),'nosniff');
+  assert.equal(await plain.text(),'ok');
+  for(const accept of [undefined,'application/json','text/plain, application/json','*/*']){
+   const r=await fetch(root+'/healthz',{headers:accept?{accept}:{}});
+   assert.match(r.headers.get('content-type'),/^application\/json/,String(accept));
+   const body=await r.json();
+   assert.equal(body.ok,true);assert.equal(body.productionReady,false);assert.equal(body.cutoverEnabled,false);
+  }
+ }finally{await new Promise(resolve=>app.server.close(resolve));}
 });

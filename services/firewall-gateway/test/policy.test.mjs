@@ -28,3 +28,10 @@ test('ten-app registry: nine signed clients plus the gateway, routes only from R
  assert.equal(SIGNING_CONTRACT.canonicalString.split('\n').length,7);
  assert.doesNotMatch(JSON.stringify(publicClients()),/[A-Za-z0-9_-]{43}/);
 });
+test('client registry publishes no service-hub alias; service is the only ID',async()=>{
+ const {publicClients,CLIENT_IDS}=await import('../policy.mjs');
+ const r=publicClients();
+ assert.equal(Object.hasOwn(r,'aliases'),false);
+ assert.ok(CLIENT_IDS.includes('service'));assert.ok(!CLIENT_IDS.includes('service-hub'));
+ assert.doesNotMatch(JSON.stringify(r),/service-hub"/);
+});

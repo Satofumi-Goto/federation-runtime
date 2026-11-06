@@ -77,7 +77,7 @@ Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更し
 ## AI質問の共通導線（標準OFF）
 
 - `POST /api/v1/assistant/ask`：アバターのタップ＝質問の共通入口。項目はSeneschalの回答契約（`docs/qa/assistant-answer-contract.md`）と同じ。
-  - 要求：`{appId, question, language, history, context, character, page, requestId?}`。`appId` は seneschal / federation / simulator / fleet / service-hub（＝service）/ urban / activity / administration / remote-monitoring。`question` 1〜1200字、`history` 8件以内（user/assistant、各1200字）、`context` 3000字、`page` 120字、本文32KB。
+  - 要求：`{appId, question, language, history, context, character, page, requestId?}`。`appId` は seneschal / federation / simulator / fleet / service / urban / activity / administration / remote-monitoring。`question` 1〜1200字、`history` 8件以内（user/assistant、各1200字）、`context` 3000字、`page` 120字、本文32KB。
   - `character` は各アプリの `characterProfile(assistant)` の出力をそのまま受け取る（id・name・personality・firstPerson・secondPerson・tone・rhythm・length・opening・followUp・acknowledgments・endings・rules・reactionStyle・directness・humor・empathy・actionBias）。Gatewayは個性を定義・上書きしない。未知キーは400。
   - 応答：200 `{ok:true,status:"answered",answer,provider}`／400 `invalid_question|invalid_app`／403 `origin_not_allowed`／413 `too_large`／429 `{status:"denied",error:"rate_limited"}`／503 `ai_unavailable`。すべてに `status` と `requestId` を付ける。
 - 送信方式は契約と異なり、各アプリのサーバーが `FIREWALL_CLIENT_KEYS_JSON` の自アプリ鍵でHMAC署名する（署名パス `/api/v1/assistant/ask`）。Origin・Cookie・Authorization付き（ブラウザ由来）は403。署名クライアントと `appId` が違えば403。
@@ -97,6 +97,6 @@ Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更し
 
 - `GET /healthz` — `ok:true`、`stage:shadow-hold`、`productionReady:false`、`cutoverEnabled:false`
 - `GET /git-head.json` — 配信中SHA。Renderが付与する `RENDER_GIT_COMMIT`（40桁）だけを使い、無い・不正なら `sha:null`／`sourceState:unverified-no-platform-sha`。配布リポジトリ `Satofumi-Goto/federation-runtime` と、配布側 `source-attestation.json` の正本コミット（無ければ `null`）
-- `GET /_status/parent` — schema `federation.runtime-child/1`、`parentOrigin:https://federation-runtime.com`、`origin:https://federation-firewall-gateway.onrender.com`、`parentVerified:false`
-- `GET /_status/readiness` — `backendIndependent:true`（Node標準のみ、Base44 SDK・バックエンドなし）、`storageIndependent:false`、`authenticatedE2E:false`、`dnsVerified:false`、`productionReady:false`、`verifiedCutovers:0`。false の項目は `pending` に未達理由
+- `GET /_status/parent` — schema `federation.runtime-child/1`、`service:firewall-standalone`（Gateway名は `gatewayService`）、`parentOrigin:https://federation-runtime.com`、`origin:https://federation-firewall-gateway.onrender.com`、`parentVerified:false`
+- `GET /_status/readiness` — schema `federation.independent-readiness/1`、`app:firewall`、`frontendHostIndependent:true`（運用画面・状態ページをこのNodeプロセスが配信）、`backendIndependent:true`（Node標準のみ、Base44 SDK・バックエンドなし）、`storageIndependent:false`、`authenticatedE2E:false`、`dnsVerified:false`、`productionReady:false`、`verifiedCutovers:0`。false の項目は `pending` に未達理由
 - 既存の `/`、`/api/status`、`/api/catalog`、`/api/clients` は変更なし

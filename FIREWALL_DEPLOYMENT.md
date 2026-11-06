@@ -81,3 +81,10 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 - Provider calls stay **OFF** unless all of `FIREWALL_ASSISTANT_ENABLED=true`, `FIREWALL_ASSISTANT_PROVIDER` (gemini default / openai), the matching `FIREWALL_ASSISTANT_GEMINI_KEY`/`FIREWALL_ASSISTANT_OPENAI_KEY`, `FIREWALL_ASSISTANT_MODEL`, `FIREWALL_ASSISTANT_BUDGET_MICROS` (≤5,000,000), `FIREWALL_ASSISTANT_MAX_CALL_MICROS` (≤100,000), `FIREWALL_ASSISTANT_EXPIRES_AT` (≤24h after boot) and `FIREWALL_ASSISTANT_CLIENT_IDS` are valid. Keep them unset on Render; do not arm without the owner.
 - Public policy `paidProviderCallsAllowed`/`userDataForwardingAllowed` read `assistant-armed-only`. Live QA accepts that value (or the pre-deploy `false`) and fails on any wider value or on `assistantEnabled:true`.
 - Render (`srv-dbm40fp42hec73djn4cg`, auto-deploy OFF) must be manually deployed to the merge commit of this distribution PR.
+
+## Unified status contract, text/plain healthz and single `service` client id (2026-11-06)
+
+- Canonical reviewed commit: `f61d8858f2af8f689aa952e3123a559b0794ae71` (federation-portal PR #1048, #1052, #1057 on top of #1034). All **27** files under `services/firewall-gateway/` are mirrored as exact Git blobs; the supporting `config/firewall-gateway-migration.json` blob is unchanged.
+- Status responses follow the 10-app unified contract; `GET /healthz` with `Accept: text/plain` returns `ok`.
+- The `service-hub` alias is removed: the only client id for the service hub console is `service` (`FIREWALL_CLIENT_KEYS_JSON.service`, `ASSISTANT_GATEWAY_CLIENT=service`). `/api/clients` no longer publishes `aliases`.
+- No route, egress, canary, assistant arming or cutover change. Render (`srv-dbm40fp42hec73djn4cg`, auto-deploy OFF) must be manually deployed to the merge commit of this distribution PR.
