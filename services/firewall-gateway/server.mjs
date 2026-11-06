@@ -93,7 +93,8 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  // Strict opt-in: signed requests must claim a distributed nonce and budget
  // BEFORE any upstream or assistant invocation. Storage failure denies.
  const storeMode=env.FIREWALL_STORE||'memory';
- const requireShared=env.FIREWALL_REQUIRE_DISTRIBUTED_STORE==='true'||storeMode==='redis-rest';
+ const requireShared=env.FIREWALL_REQUIRE_DISTRIBUTED_STORE==='true'||
+  storeMode==='redis-rest'||storeMode==='render-valkey';
  const resolved=storeFromEnv(env,{fetchImpl,clock});
  const sharedStore=resolved.store?.distributed?resolved.store:null;
  const sharedGuards=sharedStore?createSharedGuards(sharedStore):null;
