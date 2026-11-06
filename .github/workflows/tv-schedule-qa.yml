@@ -1,0 +1,28 @@
+name: Federation independent TV schedule QA
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/tv-schedule/**'
+      - '.github/workflows/tv-schedule-qa.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'services/tv-schedule/**'
+permissions:
+  contents: read
+jobs:
+  read-only-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check standalone entrypoint syntax
+        run: node --check services/tv-schedule/server.mjs
+      - name: Verify provider restrictions, cast provenance, stale-data blocking and CORS
+        run: node --test services/tv-schedule/test/*.test.mjs
