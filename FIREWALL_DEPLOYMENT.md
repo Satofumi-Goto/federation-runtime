@@ -106,3 +106,14 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 - The #1015 shape `{characterId,question,locale?,persona?,screen?}` accepts an optional `history`: `[{role:"user"|"assistant",content}]`, 1-12 turns, 1200 chars each, keys `role`/`content` only. Body limit is 4096 bytes without history and 16384 bytes with history (413 `too_large` above). Any other key or an invalid history is 400.
 - History is sent to the provider in order before the question. Audit adds `historyCount` only; no history text is logged. The contract shape `{appId,…}` is unchanged.
 - No arming, egress, canary or cutover change. Render (`srv-dbm40fp42hec73djn4cg`, auto-deploy OFF) must be manually deployed to the merge commit of this distribution PR.
+
+
+## Phase 2 security preview: Render private Valkey (Free, not persistent)
+
+- Canonical source pin: `Satofumi-Goto/federation-portal@02bf1bdd0d891ca35cf6fe551cec95e887305a3f` (PR #1128).
+- All **32** service code/test files and `config/firewall-gateway-migration.json` are pinned with Git Blob SHA in `source-attestation.json`; CI rejects unreviewed file drift.
+- Render Key Value `red-dbmo50ei0phs73cdg1f0`, Singapore, Free, `noeviction`, external IP allowlist empty, storage persistence OFF.
+- Connect to this independent private store via `FIREWALL_STORE=render-valkey` and `FIREWALL_STORE_INTERNAL_URL=redis://red-dbmo50ei0phs73cdg1f0:6379` plus `FIREWALL_REQUIRE_DISTRIBUTED_STORE=true`. This is allowed only on the server-side Render Environment. Do NOT use publicly routable Redis.
+- This automatically forces a shared nonce/replay claim, total/client rate budget, and minimal-attribute audit before any authenticated HMAC call reaches an API provider. Store unavailable or malformed means HTTP 503 and no provider call.
+- **Free KV loses all state at restart**, so shared rate and replay work across Gateway worker instances while running but this is NOT durable or tamper-proof audit. Keep `productionReady:false`, `cutoverEnabled:false`, all three API candidates HOLD and the existing user-facing APIs untouched. A future persistent plan requires separate user cost approval.
+- Runtime verification: check `/git-head.json` SHA, `/api/status.sharedSecurity` (= render-valkey / required true / configured true / distributed true), a signed request that reaches the store but returns safe `egress-disabled`, and denial when the store is unavailable.
