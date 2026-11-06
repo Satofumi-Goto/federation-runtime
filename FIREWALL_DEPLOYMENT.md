@@ -99,3 +99,10 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 - Canonical reviewed commit: `c38a1e50c606ef14fea1cf9decdb82dc3aa17b0e` (federation-portal PR #1082). All **29** files under `services/firewall-gateway/` are mirrored as exact Git blobs (changed: `server.mjs`, `README.md`, `test/server.test.mjs`); the supporting `config/firewall-gateway-migration.json` blob is unchanged.
 - `GET /_status/parent` adds `productionReady:false`, `authenticatedE2E:false` and `dnsVerified:false` next to `parentVerified:false`.
 - No route, egress, canary, assistant arming or cutover change. Render (`srv-dbm40fp42hec73djn4cg`, auto-deploy OFF) must be manually deployed to the merge commit of this distribution PR.
+
+## Assistant v1.1: optional conversation history on the #1015 shape (2026-11-06)
+
+- Canonical reviewed commit: `d83d22666c2de9405043bc11a2cdfc62a022703d` (federation-portal PR #1114 on top of #1082). All **29** files under `services/firewall-gateway/` are mirrored as exact Git blobs; the supporting `config/firewall-gateway-migration.json` blob is unchanged.
+- The #1015 shape `{characterId,question,locale?,persona?,screen?}` accepts an optional `history`: `[{role:"user"|"assistant",content}]`, 1-12 turns, 1200 chars each, keys `role`/`content` only. Body limit is 4096 bytes without history and 16384 bytes with history (413 `too_large` above). Any other key or an invalid history is 400.
+- History is sent to the provider in order before the question. Audit adds `historyCount` only; no history text is logged. The contract shape `{appId,…}` is unchanged.
+- No arming, egress, canary or cutover change. Render (`srv-dbm40fp42hec73djn4cg`, auto-deploy OFF) must be manually deployed to the merge commit of this distribution PR.
