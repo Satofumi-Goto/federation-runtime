@@ -33,6 +33,7 @@ function mock({egress=false,adminStatus=503,registry=false,keys=false,leak=false
   if(path==='/api/catalog')return response({policy:{version:'federation-firewall-policy/1',mode:'shadow-hold',defaultCutoverEnabled:false,defaultEgressEnabled:false,paidProviderCallsAllowed:paid,...(paid?{userDataForwardingAllowed:paid}:{})},
    routes:routes.map(id=>({id,phase:'shadow-hold',switched:false,liveVerified:false})),
    directExceptions:exceptions.map(id=>({id}))});
+  if(path==='/api/acquisition-routes')return response({ok:false,reason:'not-found'},404);
   if(path==='/')return response('SHADOW NO CUTOVER Egress Canary LOCKED 0 / 3',200,true);
   if(path==='/admin')return response({ok:false,reason:'admin-access-unconfigured'},adminStatus);
   if(path==='/api/v1/shadow/probe'&&init.method==='GET')return response({ok:false,reason:'method-not-allowed'},405);
@@ -52,7 +53,8 @@ test('Phase 0 verifies real safe interface without sending provider requests',as
  assert.equal(r.ok,true);
  assert.equal(r.routes,3);assert.equal(r.directExceptions,6);
  assert.equal(r.upstreamRequests,0);
- assert.equal(calls.length,9);
+ assert.equal(calls.length,10);
+ assert.equal(r.acquisitionLedger,'pending-manual-render-deploy');
  assert.equal(r.statusEndpoints,'pending-manual-render-deploy');
  assert.equal(r.clientRegistry,'pending-manual-render-deploy');
  assert.deepEqual(calls.filter(x=>x.endsWith('/api/v1/shadow/probe')),[

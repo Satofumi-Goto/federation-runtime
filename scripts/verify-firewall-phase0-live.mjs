@@ -94,6 +94,24 @@ export async function verifyFirewallPhase0(fetchImpl=fetch){
     assert.equal(registry.response.status,404,'unexpected /api/clients status');
     status.clientRegistry='pending-manual-render-deploy';
   }
+  // Seneschal acquisition-route ledger (canonical in the gateway; served after the ledger release).
+  const ledger=await request(fetchImpl,'/api/acquisition-routes');
+  if(ledger.response.status===200){
+    securityHeaders(ledger.response);
+    status.checks.push({method:'GET',path:'/api/acquisition-routes',http:200});
+    const l=ledger.data;
+    assert.equal(l.owner,'firewall-gateway');
+    assert.equal(l.egressChanged,false);
+    assert.equal(l.routes.length,l.summary.total);
+    assert.equal(new Set(l.routes.map(r=>r.id)).size,l.routes.length);
+    assert.ok(l.routes.every(r=>Array.isArray(r.keys)&&r.keys.every(k=>
+      Object.keys(k).every(n=>['name','scope','service','configured'].includes(n))&&[true,false,null].includes(k.configured))),
+      'key state must be presence only');
+    status.acquisitionLedger={routes:l.routes.length,verified:l.summary.verified,keysMissing:l.summary.keysMissing};
+  }else{
+    assert.equal(ledger.response.status,404,'unexpected /api/acquisition-routes status');
+    status.acquisitionLedger='pending-manual-render-deploy';
+  }
   // Independent-origin status endpoints (served after manual Render deploy).
   const readiness=await request(fetchImpl,'/_status/readiness');
   if(readiness.response.status===200){
