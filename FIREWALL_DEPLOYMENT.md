@@ -81,3 +81,9 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 - Provider calls stay **OFF** unless all of `FIREWALL_ASSISTANT_ENABLED=true`, `FIREWALL_ASSISTANT_PROVIDER` (gemini default / openai), the matching `FIREWALL_ASSISTANT_GEMINI_KEY`/`FIREWALL_ASSISTANT_OPENAI_KEY`, `FIREWALL_ASSISTANT_MODEL`, `FIREWALL_ASSISTANT_BUDGET_MICROS` (≤5,000,000), `FIREWALL_ASSISTANT_MAX_CALL_MICROS` (≤100,000), `FIREWALL_ASSISTANT_EXPIRES_AT` (≤24h after boot) and `FIREWALL_ASSISTANT_CLIENT_IDS` are valid. Keep them unset on Render; do not arm without the owner.
 - Public policy `paidProviderCallsAllowed`/`userDataForwardingAllowed` read `assistant-armed-only`. Live QA accepts that value (or the pre-deploy `false`) and fails on any wider value or on `assistantEnabled:true`.
 - Render (`srv-dbm40fp42hec73djn4cg`, auto-deploy OFF) must be manually deployed to the merge commit of this distribution PR.
+
+## Shared family status contract (2026-11-06)
+
+- Canonical reviewed commit: `aa02c084a977adce1c80189c2fb5463abbd552c6` (federation-portal PR #1048). `README.md`, `server.mjs` and `test/server.test.mjs` are mirrored as exact Git blobs; the other 24 files and the supporting migration config are unchanged.
+- `/_status/readiness` now uses `federation.independent-readiness/1` with `app:"firewall"` and `frontendHostIndependent:true` (evidence recorded); every other readiness value is unchanged and still false where unproven.
+- `/_status/parent` reports `service:"firewall-standalone"` plus `gatewayService:"federation-firewall-gateway"`. `/api/status` and `/healthz` keep `service:"federation-firewall-gateway"`.

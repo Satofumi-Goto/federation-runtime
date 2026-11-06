@@ -60,9 +60,16 @@ test('independent origin status endpoints report served SHA, parent and honest r
   assert.equal(head.sourceState,'render-git-commit');assert.equal(head.branch,'main');
   assert.equal(head.canonicalRepository,'Satofumi-Goto/federation-portal');
   const parent=await (await fetch(root+'/_status/parent')).json();
-  assert.deepEqual(parent,{schema:'federation.runtime-child/1',service:'federation-firewall-gateway',
-   parentOrigin:'https://federation-runtime.com',origin:'https://federation-firewall-gateway.onrender.com',parentVerified:false});
+  assert.deepEqual(parent,{schema:'federation.runtime-child/1',service:'firewall-standalone',
+   parentOrigin:'https://federation-runtime.com',origin:'https://federation-firewall-gateway.onrender.com',parentVerified:false,
+   gatewayService:'federation-firewall-gateway'});
   const ready=await (await fetch(root+'/_status/readiness')).json();
+  // Shared family contract (#1007): fixed names and types; extra fields are additive.
+  assert.equal(ready.schema,'federation.independent-readiness/1');assert.equal(ready.app,'firewall');
+  for(const key of ['productionReady','frontendHostIndependent','backendIndependent','storageIndependent','authenticatedE2E','dnsVerified'])
+   assert.equal(typeof ready[key],'boolean',key);
+  assert.equal(ready.frontendHostIndependent,true);assert.ok(ready.evidence.frontendHostIndependent);
+  assert.match(await (await fetch(root+'/')).text(),/Firewall Gateway/);
   assert.equal(ready.productionReady,false);assert.equal(ready.backendIndependent,true);
   assert.equal(ready.storageIndependent,false);assert.equal(ready.authenticatedE2E,false);
   assert.equal(ready.dnsVerified,false);assert.equal(ready.cutoverEnabled,false);assert.equal(ready.verifiedCutovers,0);
