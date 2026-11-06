@@ -1,0 +1,90 @@
+name: Live public check
+# 独立環境サービスの公開URLを観測するだけのワークフロー（配備・秘密値・DNSの操作はしない）。
+# サービス名は render.yaml（ルート・apps/*/render.yaml・deploy/independent/render.yaml）の services 直下の name から抽出する。
+# 失敗してもジョブは success で終える。
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: live-public-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for Render auto-deploy (push only)
+        if: github.event_name == 'push'
+        run: sleep 240
+      - name: Probe public URLs
+        continue-on-error: true
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+          EXTRA_SERVICES: 'federation-firewall-gateway'
+          ALL_SERVICES: ''
+        run: |
+          set +e
+          names() {
+            for f in render.yaml apps/*/render.yaml deploy/independent/render.yaml; do
+              [ -f "$f" ] || continue
+              awk '/^[^ #]/ { s = ($0 ~ /^services:/); next } s && /^(  - |    )name:/' "$f" \
+                | sed -E 's/#.*//; s/^ *-? *name:[[:space:]]*//; s/[^a-z0-9-]//g'
+            done
+            for n in $EXTRA_SERVICES; do echo "$n"; done
+          }
+          own=$(names | sort -u)
+          label="${REPOSITORY#*/}"
+          if [ -n "$ALL_SERVICES" ]; then list="$ALL_SERVICES"; else list=$(echo "$own" | sed "s/^/${label}:/"); fi
+          tmp=$(mktemp -d)
+          out="$tmp/report.md"
+          {
+            echo "### 公開確認 ${REPOSITORY} @ ${EXPECTED_SHA}"
+            echo
+            echo "| アプリ | サービス | /healthz | /git-head.json | git-head sha | sha一致 | /_status/parent | /_status/readiness |"
+            echo "|---|---|---|---|---|---|---|---|"
+          } > "$out"
+          details="$tmp/details.txt"; : > "$details"
+          for entry in $list; do
+            app="${entry%%:*}"; svc="${entry#*:}"
+            base="https://${svc}.onrender.com"
+            row="| ${app} | ${svc} |"
+            sha="-"; codes=()
+            for p in /healthz /git-head.json /_status/parent /_status/readiness; do
+              body="$tmp/body"; : > "$body"
+              code=$(curl -sS -m 10 --max-redirs 0 -o "$body" -w '%{http_code}' "${base}${p}" 2>"$tmp/err")
+              [ -n "$code" ] || code=000
+              row="${row} ${code} |"
+              if [ "$p" = /git-head.json ]; then
+                sha=$(jq -r '.sha // .commit // empty' "$body" 2>/dev/null | head -c 40)
+                [ -n "$sha" ] || sha="-"
+                if echo "$own" | grep -qx "$svc"; then
+                  if [ "$sha" = "$EXPECTED_SHA" ]; then match=yes; else match=no; fi
+                else match="(他リポジトリ)"; fi
+                row="${row} ${sha} | ${match} |"
+              fi
+              if [ "$code" = 000 ]; then src="$tmp/err"; else src="$body"; fi
+              snippet=$(head -c 300 "$src" | tr '\n\r|' '  /')
+              echo "${svc}${p} [${code}] ${snippet}" >> "$details"
+            done
+            echo "$row" >> "$out"
+          done
+          {
+            echo
+            echo '<details><summary>本文の先頭300字</summary>'
+            echo
+            echo '```'
+            cat "$details"
+            echo '```'
+            echo '</details>'
+          } >> "$out"
+          cat "$out"
+          [ -n "$GITHUB_STEP_SUMMARY" ] && cat "$out" >> "$GITHUB_STEP_SUMMARY"
+          exit 0
