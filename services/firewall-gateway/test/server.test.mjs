@@ -109,3 +109,25 @@ test('healthz answers plain ok for text/plain monitors and keeps JSON by default
   }
  }finally{await new Promise(resolve=>app.server.close(resolve));}
 });
+
+
+test('readiness accurately separates live shared Redis from durable security assurance',async()=>{
+ const {readinessStatus}=await import('../server.mjs');
+ const testCases=[
+  {env:{FIREWALL_STORE:'memory'},distributed:false,shared:false},
+  {env:{FIREWALL_STORE:'render-valkey'},distributed:true,shared:true},
+  {env:{FIREWALL_STORE:'redis-rest'},distributed:true,shared:true}
+ ];
+ for(const tc of testCases){
+  const r=readinessStatus(tc);
+  assert.equal(r.storageIndependent,false);
+  assert.equal(r.productionReady,false);
+  assert.equal(r.cutoverEnabled,false);
+  assert.equal(r.verifiedCutovers,0);
+  assert.equal(r.pending.storageIndependent.includes('shared replay'),tc.shared);
+  assert.match(r.pending.productionReady,/WAF/);
+  assert.ok(!JSON.stringify(r).includes('FIREWALL_STORE_INTERNAL_URL'));
+ }
+ const r=readinessStatus({env:{FIREWALL_STORE:'render-valkey'},distributed:true});
+ assert.match(r.pending.storageIndependent,/free Render Valkey loses state on restart/);
+});
