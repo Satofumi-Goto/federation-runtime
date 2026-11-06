@@ -22,14 +22,14 @@ function fakeProvider({failSchedule=false}={}){
   };
   return {fetchImpl,called};
 }
-async function start(options){
+async function startTestServer(options){
   const app=createTvScheduleService({...options,clock:()=>now});
   await new Promise(ok=>app.server.listen(0,'127.0.0.1',ok));
   const url='http://127.0.0.1:'+app.server.address().port;
   return {url,close:()=>new Promise(ok=>app.server.close(ok))};
 }
 test('GET returns real-provider-shaped evidence and estimated times without personal favorites',async()=>{
-  const provider=fakeProvider();const s=await start({fetchImpl:provider.fetchImpl});
+  const provider=fakeProvider();const s=await startTestServer({fetchImpl:provider.fetchImpl});
   try{
     const r=await fetch(s.url+'/api/v1/tv/schedule',{headers:{Origin:'https://seneschal-standalone-staging.onrender.com'}});
     assert.equal(r.status,200);
@@ -50,7 +50,7 @@ test('GET returns real-provider-shaped evidence and estimated times without pers
   }finally{await s.close();}
 });
 test('reject arbitrary queries, writes and untrusted browser origins',async()=>{
-  const p=fakeProvider();const s=await start({fetchImpl:p.fetchImpl});
+  const p=fakeProvider();const s=await startTestServer({fetchImpl:p.fetchImpl});
   try{
     assert.equal((await fetch(s.url+'/api/v1/tv/schedule?url=https://attacker.test')).status,400);
     assert.equal((await fetch(s.url+'/api/v1/tv/schedule',{method:'POST'})).status,405);
@@ -62,7 +62,7 @@ test('reject arbitrary queries, writes and untrusted browser origins',async()=>{
   }finally{await s.close();}
 });
 test('provider failure returns 503 rather than fabricated credits or stale availability',async()=>{
-  const p=fakeProvider({failSchedule:true}),s=await start({fetchImpl:p.fetchImpl});
+  const p=fakeProvider({failSchedule:true}),s=await startTestServer({fetchImpl:p.fetchImpl});
   try{
     const r=await fetch(s.url+'/api/v1/tv/schedule');
     assert.equal(r.status,503);
@@ -70,7 +70,7 @@ test('provider failure returns 503 rather than fabricated credits or stale avail
   }finally{await s.close();}
 });
 test('concurrent requests coalesce to one bounded provider batch',async()=>{
-  const p=fakeProvider(),s=await start({fetchImpl:p.fetchImpl});
+  const p=fakeProvider(),s=await startTestServer({fetchImpl:p.fetchImpl});
   try{
     const [a,b,c]=await Promise.all([0,1,2].map(()=>fetch(s.url+'/api/v1/tv/schedule').then(x=>x.json())));
     assert.deepEqual([a.count,b.count,c.count],[1,1,1]);
