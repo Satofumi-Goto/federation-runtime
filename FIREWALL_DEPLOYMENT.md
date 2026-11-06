@@ -52,3 +52,10 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 
 - Canonical reviewed commit: `c8380d701ebf197ed8a9e8c213b4fb533ff3c768` (federation-portal PR #1004). The 17-file attestation now covers `amenityCandidates.mjs` and `test/amenity-candidates.test.mjs` plus the updated `policy.mjs`.
 - All 26 entries remain read-only catalog metadata. No upstream proxy, price data, HMAC, DNS, provider credential or traffic cutover is enabled. Render staging publication is a separate gated operation.
+
+## 10-app client registry (2026-11-06)
+
+- Canonical reviewed commit: `6b8ad3a957d73edd487a4dea6bda1a491c0d887d` (federation-portal PR #1013). All 17 attested files mirrored as exact Git blobs.
+- Nine signed clients (`activity`, `seneschal`, `fleet`, `urban`, `service`, `federation`, `simulator`, `remote-monitoring`, `administration`) plus this gateway = 10 apps. `GET /api/clients` publishes ids, repositories, permitted routes and key presence only; `/api/status` adds `configuredClientIds` and `registeredApps`.
+- No route, egress, canary or cutover change. Live QA accepts either the pre-deploy state (`/api/clients` 404) or the deployed registry, and fails if any 43-char key-like value is published.
+- Render (`srv-dbm40fp42hec73djn4cg`, auto-deploy OFF) must be manually deployed to this commit before the registry is live. Client keys are added only in Render's secret `FIREWALL_CLIENT_KEYS_JSON` and in each app's server secret `FIREWALL_<APP>_HMAC_KEY`.

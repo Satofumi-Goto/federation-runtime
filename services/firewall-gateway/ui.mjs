@@ -1,7 +1,10 @@
-import {publicCatalog} from './policy.mjs';
+import {publicCatalog,publicClients} from './policy.mjs';
 const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export function renderConsole({nonce,protectedView=false,canaryEnabled=false}={}){
- const catalog=publicCatalog();
+export function renderConsole({nonce,protectedView=false,canaryEnabled=false,configuredIds=new Set()}={}){
+ const catalog=publicCatalog(),registry=publicClients(configuredIds);
+ const clientRows=registry.clients.map(c=>`<tr><td><strong>${escapeHtml(c.label)}</strong><small>${escapeHtml(c.id)}</small></td>
+ <td><small>${escapeHtml(c.repository)}</small></td><td>${escapeHtml(c.routes.length?c.routes.join(', '):'-')}</td>
+ <td><span class="pill ${c.keyConfigured?'safe':'hold'}">${c.keyConfigured?'KEY SET':'KEY UNSET'}</span></td></tr>`).join('');
  const rows=catalog.routes.map((r,i)=>`<tr><td><span class="code">${escapeHtml(String(i+1).padStart(2,'0'))}</span></td>
  <td><strong>${escapeHtml(r.label)}</strong><small>${escapeHtml(r.id)}</small></td>
  <td>${escapeHtml(r.owner)}</td><td>${escapeHtml(r.provider)}</td>
@@ -46,7 +49,7 @@ export function renderConsole({nonce,protectedView=false,canaryEnabled=false}={}
  @media(max-width:610px){.grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}.panel{overflow-x:auto}table{min-width:570px}}
  </style></head><body><div class="shell">
  <aside><div class="brand"><div class="mark">◇</div><div>FEDERATION<br/><span style="font-size:10px;color:#8cbdc0;letter-spacing:.15em">FIREWALL</span></div></div>
- <nav class="nav"><a class="on" href="/">Security Overview</a><a href="/#registry">API Registry</a><a href="/#exceptions">Direct Exceptions</a><a href="/#controls">Protection Layers</a></nav>
+ <nav class="nav"><a class="on" href="/">Security Overview</a><a href="/#registry">API Registry</a><a href="/#clients">App Clients</a><a href="/#exceptions">Direct Exceptions</a><a href="/#controls">Protection Layers</a></nav>
  <div class="side-note">Independent security service<br/>No Base44 credential forwarding<br/>No production consumer cutover</div></aside>
  <main><div class="top"><p class="eyebrow">FEDERATION / SECURITY OPERATIONS</p><div class="mode">● SHADOW · NO CUTOVER</div></div>
  <h1>Firewall Gateway<br/>Security Operations</h1>
@@ -58,6 +61,8 @@ export function renderConsole({nonce,protectedView=false,canaryEnabled=false}={}
  </section>
  <section class="panel" id="registry"><div class="panel-header"><div><h2>API Connection Registry</h2><p>取得責任は各アプリ、通信防御はFirewallに集約</p></div><span class="pill hold">CUTOVER DISABLED</span></div>
  <table><thead><tr><th>No</th><th>Upstream source</th><th>Owner</th><th>Provider</th><th>Migration status</th></tr></thead><tbody>${rows}</tbody></table></section>
+ <section class="panel" id="clients"><div class="panel-header"><div><h2>App Client Registry</h2><p>10アプリ = 署名クライアント${registry.clients.length}件 + Gateway本体。鍵の値は表示しない</p></div><span class="pill hold">${registry.clients.filter(c=>c.keyConfigured).length} / ${registry.clients.length} KEYS</span></div>
+ <table><thead><tr><th>App client</th><th>Repository</th><th>Permitted routes</th><th>HMAC key</th></tr></thead><tbody>${clientRows}</tbody></table></section>
  <div class="split"><section class="panel" id="exceptions"><div class="panel-header"><div><h2>Protected Direct Connections</h2><p>業務特性上、直接接続を正規経路とする対象</p></div></div><div class="exceptions">${exceptions}</div></section>
  <section class="panel" id="controls"><div class="panel-header"><div><h2>Security Control Layers</h2><p>コード側防御と基盤側の未検証を区別</p></div></div>
  <div class="guard"><div><span class="check">✓</span>署名付きサービス認証・短期リプレイ防止</div>

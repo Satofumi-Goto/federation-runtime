@@ -1,5 +1,6 @@
 import {createHash,createHmac,timingSafeEqual,randomUUID} from 'node:crypto';
-const CLIENTS=new Set(['activity','seneschal','fleet','urban','service','federation','simulator','remote-monitoring']);
+import {CLIENT_IDS} from './policy.mjs';
+const CLIENTS=new Set(CLIENT_IDS);
 export function loadKeys(env=process.env){
  if(!env.FIREWALL_CLIENT_KEYS_JSON)return new Map();
  if(env.FIREWALL_CLIENT_KEYS_JSON.length>8192)throw Error('invalid-keys');
@@ -47,5 +48,5 @@ export function createAuthenticator({env=process.env,clock=Date.now}={}){
   used.set(tag,now);
   return {ok:true,client};
  }
- return {verify,configured:keys.size>0};
+ return {verify,configured:keys.size>0,configuredIds:()=>new Set(keys.keys())};
 }

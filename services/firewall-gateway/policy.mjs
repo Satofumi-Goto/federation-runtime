@@ -36,11 +36,53 @@ export const SECURITY_POLICY=Object.freeze({
  maxNewRequestsPerMinutePerWorker:20,requiresRealCanaryProof:true,
  requiresUiParity:true,requiresRollbackProof:true,requiresExplicitRetirementReview:true,
 });
+// Ten independent apps: nine signed consumer clients plus this gateway itself.
+// Registration here is identity metadata only. A client may authenticate only
+// after its key is set server-side; routes come solely from ROUTES.consumers.
+export const GATEWAY_APP_ID='firewall-gateway';
+const CLIENT_DEFS=[
+ ['activity','活動コンソール','Satofumi-Goto/life-transaction-console','FIREWALL_ACTIVITY_HMAC_KEY'],
+ ['seneschal','Seneschal','Satofumi-Goto/seneschal','FIREWALL_SENESCHAL_HMAC_KEY'],
+ ['fleet','フリート運行','Satofumi-Goto/fleet-operations-console','FIREWALL_FLEET_HMAC_KEY'],
+ ['urban','都市運行','Satofumi-Goto/urban-operation-console','FIREWALL_URBAN_HMAC_KEY'],
+ ['service','サービス拠点','Satofumi-Goto/service-hub-console','FIREWALL_SERVICE_HMAC_KEY'],
+ ['federation','Federation','Satofumi-Goto/federation-portal','FIREWALL_FEDERATION_HMAC_KEY'],
+ ['simulator','事業性シミュレータ','Satofumi-Goto/mobility-business-lab','FIREWALL_SIMULATOR_HMAC_KEY'],
+ ['remote-monitoring','遠隔監視','Satofumi-Goto/federation-portal','FIREWALL_REMOTE_MONITORING_HMAC_KEY'],
+ ['administration','行政サービス','Satofumi-Goto/federation-portal','FIREWALL_ADMINISTRATION_HMAC_KEY'],
+];
+export const CLIENT_REGISTRY=Object.freeze(CLIENT_DEFS.map(([id,label,repository,clientSecretName])=>Object.freeze({
+ id,label,repository,clientSecretName,gatewayKeyField:'FIREWALL_CLIENT_KEYS_JSON.'+id,
+ routes:Object.freeze(Object.values(ROUTES).filter(r=>r.consumers.includes(id)).map(r=>r.id)),
+})));
+export const CLIENT_IDS=Object.freeze(CLIENT_REGISTRY.map(c=>c.id));
+// Alias used by the shared avatar-answer contract; resolves to the same client.
+export const CLIENT_ALIASES=Object.freeze({'service-hub':'service'});
+export const SIGNING_CONTRACT=Object.freeze({
+ version:'federation-firewall-hmac/1',algorithm:'HMAC-SHA256',keyFormat:'32 random bytes, base64url without padding (43 chars)',
+ endpoint:'/api/v1/shadow/probe',method:'POST',contentType:'application/json',maxBodyBytes:512,
+ body:'{"routeId":"<route id>"} (exactly one key)',
+ headers:['x-fw-client','x-fw-time','x-fw-nonce','x-fw-signature'],
+ canonicalString:['federation-firewall-hmac/1','<client>','POST','/api/v1/shadow/probe','<x-fw-time ms, 13 digits>','<x-fw-nonce UUIDv4>','<sha256 hex of exact body>'].join('\n'),
+ signature:'lowercase hex HMAC-SHA256 of canonicalString with the client key',
+ maxClockSkewMs:60000,nonceReuse:'rejected (409) within 60s per process',
+ forbiddenHeaders:['origin','cookie','authorization'],callerSide:'server-only; never from a browser',
+ responses:{'200':'ok:true, data, provider, sourceUrl, fetchedAt','400':'unsupported-command','401':'signature-required|signature-invalid',
+  '403':'server-to-server-only|route-not-enabled|route-not-permitted','409':'replay-refused','413':'request-too-large',
+  '429':'upstream-budget-exhausted','502':'provider-unavailable','503':'service-auth-unconfigured|egress-disabled|egress-expired'},
+ fallback:'callers keep their legacy route; any non-200 must fall back without retry storms',
+});
+export function publicClients(configured=new Set()){
+ return {gatewayAppId:GATEWAY_APP_ID,appCount:CLIENT_REGISTRY.length+1,aliases:CLIENT_ALIASES,
+  clients:CLIENT_REGISTRY.map(c=>({...c,keyConfigured:configured.has(c.id),
+   gatewayEgressActive:false}))};
+}
 export function publicCatalog(){
  return {policy:SECURITY_POLICY,
  routes:Object.values(ROUTES).map(({id,label,owner,provider,phase,consumers,ttlMs})=>({
   id,label,owner,provider,phase,consumers,ttlMs,switched:false,liveVerified:false,
  })),
  // Metadata only; these never join ROUTES or create authorized egress.
- directExceptions:DIRECT_EXCEPTIONS,amenityCandidates:AMENITY_CANDIDATES};
+ directExceptions:DIRECT_EXCEPTIONS,amenityCandidates:AMENITY_CANDIDATES,
+ clientIds:CLIENT_IDS};
 }
