@@ -1,7 +1,7 @@
 // Independent, read-only television schedule feed owned by Federation.
 // No per-user data, dynamic upstream URLs, credentials, calendar writes or firewall cutover.
 import http from 'node:http';
-import {pathToFileURL} from 'node:url';
+import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 const PROVIDER='https://api.tvmaze.com';
 const MAX_EPISODES=12;
@@ -123,4 +123,4 @@ export function startServer(env=process.env){
   app.server.listen(port,'0.0.0.0',()=>console.log('federation-tv-schedule ready'));
   return app;
 }
-if(process.argv[1]&&resolve(process.argv[1])===pathToFileURL(import.meta.url).pathname)startServer();
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))startServer();
