@@ -28,7 +28,7 @@ jobs:
           node-version: '24'
       - name: Firewall security regression
         run: node --test services/firewall-gateway/test/*.test.mjs
-      - name: Immutable 27-file canonical provenance and anti-tampering check
+      - name: Immutable 29-file canonical provenance and anti-tampering check
         run: |
           node scripts/verify-firewall-source-attestation.mjs
           node --test scripts/tests/firewall-source-attestation.test.mjs
