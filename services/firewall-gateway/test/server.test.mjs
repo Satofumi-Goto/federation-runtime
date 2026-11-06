@@ -90,3 +90,22 @@ test('git-head.json never invents a SHA when the platform value is missing or ma
  assert.equal(pinned.sha,'a'.repeat(40));assert.equal(pinned.branch,null);
  assert.equal(pinned.canonicalCommit,'b'.repeat(40));
 });
+test('healthz answers plain ok for text/plain monitors and keeps JSON by default',async()=>{
+ const app=createGatewayServer({env:{}});
+ await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
+ const root='http://127.0.0.1:'+app.server.address().port;
+ try{
+  const plain=await fetch(root+'/healthz',{headers:{accept:'text/plain'}});
+  assert.equal(plain.status,200);
+  assert.match(plain.headers.get('content-type'),/^text\/plain/);
+  assert.equal(plain.headers.get('cache-control'),'no-store');
+  assert.equal(plain.headers.get('x-content-type-options'),'nosniff');
+  assert.equal(await plain.text(),'ok');
+  for(const accept of [undefined,'application/json','text/plain, application/json','*/*']){
+   const r=await fetch(root+'/healthz',{headers:accept?{accept}:{}});
+   assert.match(r.headers.get('content-type'),/^application\/json/,String(accept));
+   const body=await r.json();
+   assert.equal(body.ok,true);assert.equal(body.productionReady,false);assert.equal(body.cutoverEnabled,false);
+  }
+ }finally{await new Promise(resolve=>app.server.close(resolve));}
+});

@@ -115,9 +115,15 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
   });
   if(!req.url||req.url.length>1024)return reply(res,414,{ok:false,reason:'invalid-target'});
   try{
-   if(req.method==='GET'&&path==='/healthz')
+   if(req.method==='GET'&&path==='/healthz'){
+    // Family monitor reads plain "ok" when it asks for text/plain; JSON stays the default.
+    const accept=String(req.headers.accept||'');
+    if(/text\/plain/i.test(accept)&&!/application\/json/i.test(accept)){
+     res.writeHead(200,{...SECURITY_HEADERS,'Content-Type':'text/plain; charset=utf-8'});return res.end('ok');
+    }
     return reply(res,200,{ok:true,service:'federation-firewall-gateway',stage:'shadow-hold',
       productionReady:false,cutoverEnabled:false,independentApps:apps()});
+   }
    if(req.method==='GET'&&path==='/git-head.json')
     return reply(res,200,head);
    if(req.method==='GET'&&path==='/_status/parent')

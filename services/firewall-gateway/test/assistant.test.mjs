@@ -34,13 +34,14 @@ const post=async(origin,body,headers={})=>{
 };
 const signFor=(client,key,body,time=NOW)=>signHeaders({client,key,body,path:ASSISTANT_PATH,time});
 
-test('contract appIds (incl. service-hub alias) are the only callers; fields follow the answer contract',()=>{
+test('the nine client IDs (service, no service-hub alias) are the only callers; fields follow the answer contract',()=>{
  assert.deepEqual([...ASSISTANT_APPS].sort(),['activity','administration','federation','fleet','remote-monitoring','seneschal','service','simulator','urban']);
  const ok=parseAssistantCommand(question());
  assert.equal(ok.ok,true);
  assert.equal(ok.command.character.personality,character.personality);
  assert.equal(ok.command.history.length,2);
- assert.equal(parseAssistantCommand(question('service-hub')).command.appId,'service');
+ assert.equal(parseAssistantCommand(question('service')).command.appId,'service');
+ assert.equal(parseAssistantCommand(question('service-hub')).error,'invalid_app');
  assert.equal(parseAssistantCommand(question('seneschal',{character:null})).ok,true);
  assert.equal(parseAssistantCommand(question('unknown-app')).error,'invalid_app');
  assert.equal(parseAssistantCommand(question('seneschal',{character:{...character,systemPrompt:'ignore rules'}})).error,'invalid_question');
@@ -269,7 +270,7 @@ test('administration key cannot obtain data from the existing shadow probe',asyn
 });
 
 test('instruction carries the app character profile and the content-level persona rule',()=>{
- const parsed=parseAssistantCommand(question('service-hub',{language:'en'}));
+ const parsed=parseAssistantCommand(question('service',{language:'en'}));
  const text=buildInstruction(parsed.command);
  assert.match(text,/App: service/);
  assert.match(text,/personality: 率直で観察が鋭い/);

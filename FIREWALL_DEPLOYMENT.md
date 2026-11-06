@@ -84,6 +84,8 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 
 ## Shared family status contract (2026-11-06)
 
-- Canonical reviewed commit: `aa02c084a977adce1c80189c2fb5463abbd552c6` (federation-portal PR #1048). `README.md`, `server.mjs` and `test/server.test.mjs` are mirrored as exact Git blobs; the other 24 files and the supporting migration config are unchanged.
+- Canonical reviewed commit: `f61d8858f2af8f689aa952e3123a559b0794ae71` (federation-portal PR #1048, #1052, #1057). `README.md`, `assistant.mjs`, `policy.mjs`, `server.mjs`, `test/assistant.test.mjs`, `test/policy.test.mjs` and `test/server.test.mjs` are mirrored as exact Git blobs; the other 20 files and the supporting migration config are unchanged.
 - `/_status/readiness` now uses `federation.independent-readiness/1` with `app:"firewall"` and `frontendHostIndependent:true` (evidence recorded); every other readiness value is unchanged and still false where unproven.
 - `/_status/parent` reports `service:"firewall-standalone"` plus `gatewayService:"federation-firewall-gateway"`. `/api/status` and `/healthz` keep `service:"federation-firewall-gateway"`.
+- `/healthz` returns plain `ok` (text/plain) when the request asks for `text/plain` without `application/json`; JSON otherwise (live QA sends `Accept: application/json`).
+- The `service-hub` alias is removed: `/api/clients` no longer has `aliases`, and the assistant accepts only `appId:"service"` (`service-hub` is 400 `invalid_app`).

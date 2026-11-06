@@ -77,7 +77,7 @@ Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更し
 ## AI質問の共通導線（標準OFF）
 
 - `POST /api/v1/assistant/ask`：アバターのタップ＝質問の共通入口。項目はSeneschalの回答契約（`docs/qa/assistant-answer-contract.md`）と同じ。
-  - 要求：`{appId, question, language, history, context, character, page, requestId?}`。`appId` は seneschal / federation / simulator / fleet / service-hub（＝service）/ urban / activity / administration / remote-monitoring。`question` 1〜1200字、`history` 8件以内（user/assistant、各1200字）、`context` 3000字、`page` 120字、本文32KB。
+  - 要求：`{appId, question, language, history, context, character, page, requestId?}`。`appId` は seneschal / federation / simulator / fleet / service / urban / activity / administration / remote-monitoring。`question` 1〜1200字、`history` 8件以内（user/assistant、各1200字）、`context` 3000字、`page` 120字、本文32KB。
   - `character` は各アプリの `characterProfile(assistant)` の出力をそのまま受け取る（id・name・personality・firstPerson・secondPerson・tone・rhythm・length・opening・followUp・acknowledgments・endings・rules・reactionStyle・directness・humor・empathy・actionBias）。Gatewayは個性を定義・上書きしない。未知キーは400。
   - 応答：200 `{ok:true,status:"answered",answer,provider}`／400 `invalid_question|invalid_app`／403 `origin_not_allowed`／413 `too_large`／429 `{status:"denied",error:"rate_limited"}`／503 `ai_unavailable`。すべてに `status` と `requestId` を付ける。
 - 送信方式は契約と異なり、各アプリのサーバーが `FIREWALL_CLIENT_KEYS_JSON` の自アプリ鍵でHMAC署名する（署名パス `/api/v1/assistant/ask`）。Origin・Cookie・Authorization付き（ブラウザ由来）は403。署名クライアントと `appId` が違えば403。

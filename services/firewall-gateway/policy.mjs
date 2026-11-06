@@ -58,8 +58,6 @@ export const CLIENT_REGISTRY=Object.freeze(CLIENT_DEFS.map(([id,label,repository
  routes:Object.freeze(Object.values(ROUTES).filter(r=>r.consumers.includes(id)).map(r=>r.id)),
 })));
 export const CLIENT_IDS=Object.freeze(CLIENT_REGISTRY.map(c=>c.id));
-// Alias used by the shared avatar-answer contract; resolves to the same client.
-export const CLIENT_ALIASES=Object.freeze({'service-hub':'service'});
 export const SIGNING_CONTRACT=Object.freeze({
  version:'federation-firewall-hmac/1',algorithm:'HMAC-SHA256',keyFormat:'32 random bytes, base64url without padding (43 chars)',
  endpoint:'/api/v1/shadow/probe',method:'POST',contentType:'application/json',maxBodyBytes:512,
@@ -75,7 +73,7 @@ export const SIGNING_CONTRACT=Object.freeze({
  fallback:'callers keep their legacy route; any non-200 must fall back without retry storms',
 });
 export function publicClients(configured=new Set()){
- return {gatewayAppId:GATEWAY_APP_ID,appCount:CLIENT_REGISTRY.length+1,aliases:CLIENT_ALIASES,
+ return {gatewayAppId:GATEWAY_APP_ID,appCount:CLIENT_REGISTRY.length+1,
   clients:CLIENT_REGISTRY.map(c=>({...c,keyConfigured:configured.has(c.id),
    gatewayEgressActive:false}))};
 }
