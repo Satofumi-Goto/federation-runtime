@@ -50,14 +50,14 @@ test('closed OIDC gate, strict repository claims and replay defense',async()=>{
  assert.equal((await verifier.verify(f.token())).ok,true);
  assert.equal((await verifier.verify(f.token())).status,409);
 });
-test('egress stays disabled unless BOTH global and holiday-only flags are exact',async()=>{
+test('egress stays disabled without global, route AND short expiry gates',async()=>{
  const f=fixture();
  for(const env of [{FIREWALL_CANARY_EGRESS:'true'},
   {FIREWALL_CANARY_ROUTE_IDS:'japan-holidays'},{}]){
   const x=createEgress({env,fetchImpl:f.fetchImpl});
   assert.equal((await x.probe('federation','japan-holidays')).status,503);
  }
- const x=createEgress({env:{FIREWALL_CANARY_EGRESS:'true',FIREWALL_CANARY_ROUTE_IDS:'japan-holidays'},fetchImpl:f.fetchImpl});
+ const x=createEgress({env:{FIREWALL_CANARY_EGRESS:'true',FIREWALL_CANARY_ROUTE_IDS:'japan-holidays',FIREWALL_CANARY_EXPIRES_AT:new Date(Date.now()+120000).toISOString()},fetchImpl:f.fetchImpl});
  assert.equal((await x.probe('federation','open-meteo-tokyo')).status,403);
  assert.equal((await x.probe('federation','jma-earthquake-list')).status,403);
  assert.equal((await x.probe('federation','japan-holidays')).status,200);
@@ -66,7 +66,8 @@ test('only pinned workflow identity may call the holiday gateway endpoint',async
  const f=fixture();
  const app=createGatewayServer({
   env:{FIREWALL_GITHUB_CANARY_OIDC:'true',
-   FIREWALL_CANARY_EGRESS:'true',FIREWALL_CANARY_ROUTE_IDS:'japan-holidays'},
+   FIREWALL_CANARY_EGRESS:'true',FIREWALL_CANARY_ROUTE_IDS:'japan-holidays',
+   FIREWALL_CANARY_EXPIRES_AT:new Date(Date.now()+120000).toISOString()},
   fetchImpl:f.fetchImpl,auditSink:()=>{},
  });
  await new Promise(done=>app.server.listen(0,'127.0.0.1',done));

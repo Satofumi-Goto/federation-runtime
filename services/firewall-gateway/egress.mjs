@@ -29,10 +29,18 @@ export async function readBoundedJson(response,maxBytes){
 export function createEgress({env=process.env,fetchImpl=fetch,clock=Date.now}={}){
  const started=new Map(),cache=new Map(),failures=new Map(),pending=new Map();
  let active=0,totalStarted=0,windowStart=clock();
- // A two-step opt-in: a global canary switch alone NEVER opens all routes.
- const liveEnabled=env.FIREWALL_CANARY_EGRESS==='true' &&
-   env.FIREWALL_CANARY_ROUTE_IDS==='japan-holidays';
- const enabledRoutes=liveEnabled?new Set(['japan-holidays']):new Set();
+ // This requires an explicit route and a short, non-renewing expiration.
+ // The time window is validated ONCE at startup: an expiry far in the
+ // future can never auto-arm later as time advances.
+ const boot=clock();
+ const rawExpiry=env.FIREWALL_CANARY_EXPIRES_AT||'';
+ const expiration=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(rawExpiry)
+   ?Date.parse(rawExpiry):NaN;
+ const armedAtBoot=env.FIREWALL_CANARY_EGRESS==='true' &&
+   env.FIREWALL_CANARY_ROUTE_IDS==='japan-holidays' &&
+   Number.isFinite(expiration) && expiration>boot && expiration-boot<=600000;
+ const liveEnabled=()=>armedAtBoot && clock()<expiration;
+ const enabledRoutes=armedAtBoot?new Set(['japan-holidays']):new Set();
  const allowHost=new Set(Object.values(ROUTES).map(route=>new URL(route.url).hostname));
  function admit(client,id){
   const now=clock();
@@ -43,7 +51,7 @@ export function createEgress({env=process.env,fetchImpl=fetch,clock=Date.now}={}
   return true;
  }
  async function probe(client,routeId){
-  if(!liveEnabled)return {status:503,result:{ok:false,reason:'egress-disabled'}};
+  if(!liveEnabled())return {status:503,result:{ok:false,reason:'egress-disabled'}};
   if(!enabledRoutes.has(routeId))
    return {status:403,result:{ok:false,reason:'route-not-enabled'}};
   const route=ROUTES[routeId];
@@ -69,6 +77,7 @@ export function createEgress({env=process.env,fetchImpl=fetch,clock=Date.now}={}
       headers:{Accept:'application/json','User-Agent':'FederationFirewall/0.1 (shadow-canary)'},
       signal:AbortSignal.timeout(4500)});
     const data=await readBoundedJson(response,route.maxBytes);
+    if(!liveEnabled())return {status:503,result:{ok:false,reason:'egress-expired'}};
     const recordCount=Array.isArray(data)?data.length:
       Array.isArray(data?.items)?data.items.length:Array.isArray(data?.events)?data.events.length:0;
     if(recordCount>route.maxRecords)throw Error('too-many-records');
@@ -95,5 +104,6 @@ export function createEgress({env=process.env,fetchImpl=fetch,clock=Date.now}={}
   pending.set(routeId,task);
   return task;
  }
- return {probe,liveEnabled,info:()=>({egressEnabled:liveEnabled,active,cacheEntries:cache.size})};
+ return {probe,get liveEnabled(){return liveEnabled();},
+   info:()=>({egressEnabled:liveEnabled(),active,cacheEntries:cache.size})};
 }
