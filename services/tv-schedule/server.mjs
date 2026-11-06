@@ -25,7 +25,7 @@ function reply(res,status,body,{origin,cache=false}={}){
   res.writeHead(status,h);res.end(JSON.stringify(body));
 }
 export function createTvScheduleService({fetchImpl=fetch,clock=Date.now}={}){
-  let cache=null,ongoing=null;
+  let cache=null,ongoing=null,failedUntil=0;
   async function json(url,signal){
     // Every URL comes from fixed server-owned templates, never a request parameter.
     const parsed=new URL(url);
@@ -57,10 +57,10 @@ export function createTvScheduleService({fetchImpl=fetch,clock=Date.now}={}){
       }
       const soon=[...unique.values()].sort((a,b)=>Date.parse(a.airstamp)-Date.parse(b.airstamp)).slice(0,MAX_EPISODES);
       const showCastCache=new Map();
-      // Bounded lookups. The 2-way batches avoid a burst of unbounded parallel calls.
+      // At most one episode at a time, with no more than two concurrent cast lookups.
       const items=[];
-      for(let at=0;at<soon.length;at+=2){
-        const batch=soon.slice(at,at+2);
+      for(let at=0;at<soon.length;at++){
+        const batch=soon.slice(at,at+1);
         const enriched=await Promise.all(batch.map(async ep=>{
           const start=Date.parse(ep.airstamp),minutes=Number(ep.runtime);
           const showId=ep?.show?.id;
@@ -91,7 +91,13 @@ export function createTvScheduleService({fetchImpl=fetch,clock=Date.now}={}){
     const now=clock();
     if(cache&&now<cache.until)return cache.value;
     if(ongoing)return ongoing;
-    ongoing=collect().then(value=>{cache={value,until:clock()+TTL};return value;}).finally(()=>{ongoing=null;});
+    if(now<failedUntil)throw Error('upstream-cooldown');
+    ongoing=collect().then(value=>{
+      failedUntil=0;cache={value,until:clock()+TTL};return value;
+    }).catch(error=>{
+      failedUntil=clock()+60000;
+      throw error;
+    }).finally(()=>{ongoing=null;});
     return ongoing;
   }
   const server=http.createServer(async(req,res)=>{
