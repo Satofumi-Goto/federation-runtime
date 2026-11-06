@@ -6,6 +6,7 @@ import {readFileSync} from 'node:fs';
 import {createAuthenticator} from './auth.mjs';
 import {createAccessVerifier} from './access.mjs';
 import {createEgress} from './egress.mjs';
+import {createActivityAcquisition} from './activitySources.mjs';
 import {createGithubCanaryVerifier} from './githubCanary.mjs';
 import {createAssistant,parseAssistantCommand,ASSISTANT_PATH,ASSISTANT_MAX_BODY,ASSISTANT_POLICY} from './assistant.mjs';
 import {publicCatalog,publicClients,SIGNING_CONTRACT} from './policy.mjs';
@@ -95,6 +96,8 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  const auth=createAuthenticator({env,clock});
  const access=createAccessVerifier({env,fetchImpl,clock});
  const egress=createEgress({env,fetchImpl,clock});
+ const activityAcquisition=createActivityAcquisition({fetchImpl,clock});
+ const activitySourcesEnabled=env.FIREWALL_ACTIVITY_SOURCES_ENABLED==='true';
  const githubCanary=createGithubCanaryVerifier({env,fetchImpl,clock});
  // Strict opt-in: signed requests must claim a distributed nonce and budget
  // BEFORE any upstream or assistant invocation. Storage failure denies.
@@ -166,6 +169,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     return reply(res,200,{service:'federation-firewall-gateway',stage:'shadow-hold',
       configuredClients:auth.configured,configuredClientIds:[...auth.configuredIds()].sort(),
       registeredApps:publicClients().appCount,canaryEgressEnabled:egress.liveEnabled,
+      activityAcquisitionEnabled:activitySourcesEnabled,
       assistantEnabled:assistant.enabled,
       sharedSecurity:{mode:storeMode,required:requireShared,
        configured:!!sharedStore,distributed:!!sharedStore},
@@ -244,6 +248,36 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     const result=await assistant.ask(identity.client,parsed.command);
     return reply(res,result.status,result.result,
       result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});
+   }
+   if(path==='/api/v1/activity/acquire'){
+    // Browser requests and arbitrary lookups never pass this boundary.
+    if(req.headers.origin||req.headers.cookie||req.headers.authorization)
+      return reply(res,403,{ok:false,reason:'server-to-server-only'});
+    if(req.method!=='POST')return reply(res,405,{ok:false,reason:'method-not-allowed'});
+    if(!/^application\\/json(?:\\s*;|$)/i.test(req.headers['content-type']||''))
+      return reply(res,415,{ok:false,reason:'json-required'});
+    let body;
+    try{body=await limitedBody(req,64);}
+    catch{return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});}
+    const identity=auth.verify(req,body,path);
+    if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
+    if(identity.client!=='activity')return reply(res,403,{ok:false,reason:'activity-only'});
+    let command;
+    try{command=JSON.parse(body);}
+    catch{return reply(res,400,{ok:false,reason:'invalid-json'});}
+    if(!command||typeof command!=='object'||Array.isArray(command)||
+      Object.keys(command).length!==1||!['tv','online'].includes(command.source))
+      return reply(res,400,{ok:false,reason:'unsupported-command'});
+    if(!activitySourcesEnabled)return reply(res,503,{ok:false,reason:'activity-egress-disabled'});
+    const shared=await enforceShared(identity.client,req.headers['x-fw-nonce'],'activity-acquisition');
+    if(!shared.ok)return reply(res,shared.status,{ok:false,reason:shared.reason},
+      shared.retryAfterSeconds?{'Retry-After':String(shared.retryAfterSeconds)}:{});
+    signedClients.add('activity');
+    try{
+      return reply(res,200,{ok:true,...await activityAcquisition.get(command.source)});
+    }catch{
+      return reply(res,503,{ok:false,reason:'activity-upstream-unavailable'});
+    }
    }
    if(path==='/api/v1/shadow/probe'){
     // A server-to-server signature must never be accepted from a browser
