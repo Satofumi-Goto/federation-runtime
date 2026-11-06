@@ -18,6 +18,7 @@ export function renderConsole({nonce,protectedView=false,canaryEnabled=false,con
  .shell{max-width:1300px;margin:auto;display:grid;grid-template-columns:222px minmax(0,1fr);min-height:100vh}
  aside{border-right:1px solid #263447b0;padding:34px 20px;display:flex;flex-direction:column;gap:38px;background:#0b1521aa}
  .brand{display:flex;align-items:center;gap:11px;font-weight:800;letter-spacing:.045em;font-size:16px}
+ .brand-sub{font-size:10px;color:#8cbdc0;letter-spacing:.15em}
  .mark{width:34px;height:34px;border:1px solid #63e4c9;border-radius:10px;display:grid;place-items:center;background:#0f504a66;font-size:20px;color:#87ffe3}
  .eyebrow{font-size:10px;letter-spacing:.18em;color:#79a5b4;text-transform:uppercase;margin:0 0 10px}
  .nav{display:grid;gap:8px}.nav a{color:#99aec2;text-decoration:none;padding:12px 14px;font-size:13px;border-radius:9px}
@@ -48,7 +49,7 @@ export function renderConsole({nonce,protectedView=false,canaryEnabled=false,con
  @media(max-width:950px){.shell{grid-template-columns:1fr}aside{padding:16px 20px;gap:12px;border-bottom:1px solid #263447;border-right:0}.nav{display:flex;gap:6px;flex-wrap:wrap}.side-note{display:none}main{padding:27px 18px}.split{grid-template-columns:1fr}}
  @media(max-width:610px){.grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}.panel{overflow-x:auto}table{min-width:570px}}
  </style></head><body><div class="shell">
- <aside><div class="brand"><div class="mark">◇</div><div>FEDERATION<br/><span style="font-size:10px;color:#8cbdc0;letter-spacing:.15em">FIREWALL</span></div></div>
+ <aside><div class="brand"><div class="mark">◇</div><div>FEDERATION<br/><span class="brand-sub">FIREWALL</span></div></div>
  <nav class="nav"><a class="on" href="/">Security Overview</a><a href="/#registry">API Registry</a><a href="/#clients">App Clients</a><a href="/#exceptions">Direct Exceptions</a><a href="/#controls">Protection Layers</a></nav>
  <div class="side-note">Independent security service<br/>No Base44 credential forwarding<br/>No production consumer cutover</div></aside>
  <main><div class="top"><p class="eyebrow">FEDERATION / SECURITY OPERATIONS</p><div class="mode">● SHADOW · NO CUTOVER</div></div>

@@ -1,7 +1,7 @@
 {
   "schema": "federation.firewall-source-attestation/1",
   "canonicalRepository": "Satofumi-Goto/federation-portal",
-  "canonicalCommit": "5e94aa52643ae7be3aa5bffc16972f70773d31d2",
+  "canonicalCommit": "21ddb85832aac3a054ea6b50379d35cee354cf89",
   "sourcePath": "services/firewall-gateway",
   "distributionRepository": "Satofumi-Goto/federation-runtime",
   "verification": "full-file-Git-blob-sha1",
@@ -36,8 +36,9 @@
     "test/server.test.mjs": "78082190f7da504db21c4db4996014ed57fee159",
     "test/shared-route-guards.test.mjs": "052e4bb09abe763773a54f3e4326882c28393d66",
     "test/store.test.mjs": "bbcd7ec368317c4637404cfb027aac9ef1b6b21f",
+    "test/ui-csp.test.mjs": "03ea0b110330ec29e4f11058762ba0b9ff6dc27d",
     "tools/edge-negative-check.mjs": "74b07a7a411633ee04484d7739b39bea746e5042",
-    "ui.mjs": "2faf45867165a48aac40804d02d8819ae0989bc8"
+    "ui.mjs": "b85fd453aad97a347b6d8d82bfa24b54fb220e90"
   },
   "supportingFiles": {
     "config/firewall-gateway-migration.json": "d2decb960e092cdb5b4525fa4463e58a526b0d54"
