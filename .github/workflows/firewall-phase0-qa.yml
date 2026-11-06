@@ -4,11 +4,15 @@ on:
     paths:
       - 'services/firewall-gateway/**'
       - 'FIREWALL_DEPLOYMENT.md'
+      - 'scripts/verify-firewall-source-attestation.mjs'
+      - 'scripts/tests/firewall-source-attestation.test.mjs'
       - '.github/workflows/firewall-phase0-qa.yml'
   push:
     branches: [main]
     paths:
       - 'services/firewall-gateway/**'
+      - 'scripts/verify-firewall-source-attestation.mjs'
+      - 'scripts/tests/firewall-source-attestation.test.mjs'
 permissions:
   contents: read
 jobs:
@@ -22,6 +26,10 @@ jobs:
           node-version: '22'
       - name: Firewall security regression
         run: node --test services/firewall-gateway/test/*.test.mjs
+      - name: Immutable 15-file canonical provenance and anti-tampering check
+        run: |
+          node scripts/verify-firewall-source-attestation.mjs
+          node --test scripts/tests/firewall-source-attestation.test.mjs
       - name: Source syntax check
         run: |
           node --check services/firewall-gateway/server.mjs
