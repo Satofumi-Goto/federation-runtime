@@ -117,3 +117,9 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 - This automatically forces a shared nonce/replay claim, total/client rate budget, and minimal-attribute audit before any authenticated HMAC call reaches an API provider. Store unavailable or malformed means HTTP 503 and no provider call.
 - **Free KV loses all state at restart**, so shared rate and replay work across Gateway worker instances while running but this is NOT durable or tamper-proof audit. Keep `productionReady:false`, `cutoverEnabled:false`, all three API candidates HOLD and the existing user-facing APIs untouched. A future persistent plan requires separate user cost approval.
 - Runtime verification: check `/git-head.json` SHA, `/api/status.sharedSecurity` (= render-valkey / required true / configured true / distributed true), a signed request that reaches the store but returns safe `egress-disabled`, and denial when the store is unavailable.
+
+## Inline style removal for the admin console CSP (2026-11-06)
+
+- Canonical reviewed commit: `21ddb85832aac3a054ea6b50379d35cee354cf89` (federation-portal PR #1159). `ui.mjs` moves the one inline `style` attribute into the nonce-protected stylesheet (`.brand-sub`); the CSP is unchanged (`style-src` nonce only, no `unsafe-inline`).
+- `test/ui-csp.test.mjs` is added to the attestation (33 files); `ui.mjs` is mirrored as the exact Git blob from the same commit. The verifier's expected count is updated from 32 to 33 in the same PR.
+- Render (`srv-dbm40fp42hec73djn4cg`, auto-deploy OFF) must be manually deployed to the merge commit of this distribution PR.
