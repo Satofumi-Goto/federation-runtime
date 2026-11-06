@@ -55,3 +55,12 @@ Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更し
 - OIDC経路の目的はGitHubの承認済み一回限りの検証ワークフローから**Firewall→祝日API→旧経路と全件比較**を実行すること。**Activity実アプリの署名付きE2Eの代替ではない**。Activity側のHMAC鍵・Shadow有効化は依然として未設定、既存経路維持。
 - 追加の認証依存・AI・DB・有料API・利用者情報転送なし。GitHub IDトークン自体はログに記録しない。JWT nonce記録は単体プロセス内のみで、WAFや分散リプレイ保護とは呼ばない。
 - 配備の合格順: 正本PR CI → 公開用`federation-runtime`へ同一ファイルblobで別PR → Render autoDeploy OFFの手動配備 → HTTPS実測 → 専用 one-shot Actions による署名JWT疎通 → 祝日元データの全件ハッシュ照合 → Federation証跡更新。ユーザーの旧APIの停止・本番切替は行わない。
+
+
+## Phase 1.3: 期限付きカナリア（標準OFF）
+
+- 実提供APIへのカナリアは従来の `FIREWALL_CANARY_EGRESS=true` と `FIREWALL_CANARY_ROUTE_IDS=japan-holidays` に加え、`FIREWALL_CANARY_EXPIRES_AT`（ミリ秒付き UTC ISO8601、例 `2026-11-06T01:10:00.000Z`）を必須にする。
+- ゲートウェイが起動した時刻より未来、かつ **10分以内**の時刻だけが有効。未来の遠い期限、過去日、タイムゾーンの曖昧な形式、複数ルート指定は全件OFFにする。起動後も要求ごとに期限を再評価する。
+- 期限を越えたらキャッシュも返さず、処理中の上流から返ったデータも利用者へ渡さない。短期の検証専用であり、利用者向けAPIの永続運用や本番切替には使用しない。
+- HTTP/200や一時的なカナリア通過を、本番WAF・分散レート/nonce・改ざん不能ログ・無期限のサービス認証の完成と誤認しない。
+- 本番の切替件数はゼロで、旧経路を停止せず、環境変数も通常は `FIREWALL_CANARY_EGRESS=false`。このコードの公開だけでカナリアを自動起動しない。
