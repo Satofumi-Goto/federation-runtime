@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Render 配備と公開確認（Node 22、依存なし）。
+// Render 配備と公開確認（Node 24、依存なし）。
 // - RENDER_API_KEY が空なら配備せず skip（終了コード0）。
 // - 配備対象は render.yaml のサービス名（render.yaml が無いrepoは RENDER_SERVICE_NAMES）だけ。
 // - サービスの作成・削除・環境変数変更・DNS切替はしない。
