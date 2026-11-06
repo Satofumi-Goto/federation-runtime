@@ -4,16 +4,23 @@ import {randomBytes} from 'node:crypto';
 import {createGatewayServer} from '../server.mjs';
 import {signHeaders} from '../auth.mjs';
 import {CLIENT_IDS,GATEWAY_APP_ID} from '../policy.mjs';
-import {INDEPENDENT_ORIGINS,independentApps} from '../origins.mjs';
+import {INDEPENDENT_ORIGINS,SERVING_HOSTS,PLANNED_CUSTOM_ORIGINS,independentApps} from '../origins.mjs';
 
 test('every registered app has an origin entry; unassigned stays null',()=>{
  assert.deepEqual(Object.keys(INDEPENDENT_ORIGINS).sort(),[...CLIENT_IDS,GATEWAY_APP_ID].sort());
- for(const v of Object.values(INDEPENDENT_ORIGINS))
-  assert.ok(v===null||/^https:\/\/[a-z0-9.-]+$/.test(v));
+ for(const [id,v] of Object.entries(INDEPENDENT_ORIGINS)){
+  if(id==='seneschal'){assert.equal(v,'https://seneschal-runtime.com');continue;}
+  assert.equal(v,id===GATEWAY_APP_ID?'https://federation-firewall-gateway.onrender.com':'https://'+id+'-standalone-staging.onrender.com',id);
+ }
+ assert.deepEqual(SERVING_HOSTS,{seneschal:'https://seneschal-standalone-staging.onrender.com'});
+ assert.deepEqual(PLANNED_CUSTOM_ORIGINS,{federation:'https://federation-runtime.com'});
  const d=independentApps();
  assert.equal(d.appCount,10);
  assert.equal(d.productionE2EVerified,0);
- assert.ok(d.apps.every(a=>a.productionE2EVerified===false&&a.connection!=='connected'));
+ assert.ok(d.apps.every(a=>a.productionE2EVerified===false&&a.dnsVerified===false&&a.connection!=='connected'));
+ assert.equal(d.originsAssigned,10);
+ assert.equal(d.apps.find(a=>a.id==='seneschal').servingHost,'https://seneschal-standalone-staging.onrender.com');
+ assert.equal(d.apps.find(a=>a.id==='fleet').servingHost,'https://fleet-standalone-staging.onrender.com');
 });
 
 test('healthz/status/catalog show 10 origins and honest connection state; egress stays off',async()=>{
@@ -27,7 +34,7 @@ test('healthz/status/catalog show 10 origins and honest connection state; egress
   const health=await (await fetch(root+'/healthz')).json();
   assert.equal(health.productionReady,false);
   assert.equal(health.independentApps.apps.length,10);
-  assert.equal(state(health.independentApps,'activity'),'origin-unassigned');
+  assert.equal(state(health.independentApps,'activity'),'not-connected');
   assert.equal(state(health.independentApps,'seneschal'),'not-connected');
   assert.equal(state(health.independentApps,'federation'),'key-configured-no-signed-request');
   assert.equal(state(health.independentApps,GATEWAY_APP_ID),'self');
@@ -42,7 +49,7 @@ test('healthz/status/catalog show 10 origins and honest connection state; egress
   const catalog=await (await fetch(root+'/api/catalog')).json();
   assert.equal(catalog.policy.defaultEgressEnabled,false);
   assert.equal(catalog.independentApps.productionE2EVerified,0);
-  assert.equal(catalog.independentApps.originsAssigned,3);
+  assert.equal(catalog.independentApps.originsAssigned,10);
   assert.doesNotMatch(JSON.stringify([health,status,catalog]),new RegExp(key.toString('base64url')));
  }finally{await new Promise(r=>app.server.close(r));}
 });

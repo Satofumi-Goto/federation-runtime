@@ -90,7 +90,7 @@ Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更し
 
 ## 10アプリの独立Originと接続状態（2026-11-06）
 
-- 独立Origin：`origins.mjs` の `INDEPENDENT_ORIGINS`（ソース固定値、未割当は `null`）。Seneschal `https://seneschal-runtime.com`、Federation `https://federation-runtime.com`、Gateway `https://federation-firewall-gateway.onrender.com`、他7件は未割当。
+- 独立Origin：`origins.mjs` の `INDEPENDENT_ORIGINS`（各アプリの `/_status/parent` の origin、ソース固定値）。Gateway `https://federation-firewall-gateway.onrender.com`、Seneschal `https://seneschal-runtime.com`、他8件 `https://<id>-standalone-staging.onrender.com`（activity・fleet・urban・service・federation・simulator・remote-monitoring・administration）。`servingHost`：Seneschal `https://seneschal-standalone-staging.onrender.com`、他は origin と同じ。`plannedCustomOrigin`：Federation `https://federation-runtime.com`。全件 `dnsVerified:false`。
 - `/healthz`・`/api/status`・`/api/catalog` の `independentApps`：10アプリのOriginと接続状態（`origin-unassigned`／`not-connected`／`key-configured-no-signed-request`／`signed-request-verified-this-process`／`self`）。`productionE2EVerified` は常に `false`。
 
 ## 独立オリジンの状態エンドポイント（2026-11-06）
