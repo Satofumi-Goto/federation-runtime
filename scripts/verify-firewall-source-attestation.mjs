@@ -25,7 +25,7 @@ export function verifyAttestation(manifest,files){
  const expected=manifest.files;
  assert.ok(expected&&typeof expected==='object'&&!Array.isArray(expected));
  const names=Object.keys(expected).sort();
- assert.equal(names.length,33,'unexpected canonical source count');
+ assert.equal(names.length,36,'unexpected canonical source count');
  assert.deepEqual([...files.keys()].sort(),names,'unreviewed additions or deletions');
  for(const name of names){
   assert.ok(name===name.replaceAll('\\','/')&&!name.includes('..')&&!name.startsWith('/'),

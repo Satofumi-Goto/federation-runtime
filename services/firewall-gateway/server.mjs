@@ -10,7 +10,8 @@ import {createGithubCanaryVerifier} from './githubCanary.mjs';
 import {createAssistant,parseAssistantCommand,ASSISTANT_PATH,ASSISTANT_MAX_BODY,ASSISTANT_POLICY} from './assistant.mjs';
 import {publicCatalog,publicClients,SIGNING_CONTRACT} from './policy.mjs';
 import {renderConsole} from './ui.mjs';
-import {independentApps,INDEPENDENT_ORIGINS} from './origins.mjs';
+import {independentApps,INDEPENDENT_ORIGINS,SERVING_HOSTS} from './origins.mjs';
+import {publicAcquisitionLedger} from './acquisitionLedger.mjs';
 import {storeFromEnv,createSharedGuards} from './store.mjs';
 
 const SECURITY_HEADERS=Object.freeze({
@@ -172,6 +173,13 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       independentApps:apps()});
    if(req.method==='GET'&&path==='/api/catalog')
     return reply(res,200,{...publicCatalog(),independentApps:apps()});
+   if(req.method==='GET'&&path==='/api/acquisition-routes'){
+    // Read-only ledger for the independent apps' screens. No credentials, key values or egress.
+    const origin=req.headers.origin;
+    const allowed=new Set([...Object.values(INDEPENDENT_ORIGINS),...Object.values(SERVING_HOSTS)].filter(Boolean));
+    const cors=typeof origin==='string'&&allowed.has(origin)?{'Access-Control-Allow-Origin':origin,Vary:'Origin'}:{Vary:'Origin'};
+    return reply(res,200,publicAcquisitionLedger(env),cors);
+   }
    if(req.method==='GET'&&path==='/api/clients')
     return reply(res,200,{...publicClients(auth.configuredIds()),signing:SIGNING_CONTRACT,
       assistant:{...ASSISTANT_POLICY,enabled:assistant.enabled}});

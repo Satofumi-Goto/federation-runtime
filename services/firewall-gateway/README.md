@@ -21,6 +21,7 @@ Node.js 22以上。外部依存パッケージ、AI API、DB、課金設定な�
 - `GET /healthz` — プロセスのヘルス。**productionReady:false**
 - `GET /api/status` — 構成状態。秘密値を含まない
 - `GET /api/catalog` — 対象APIと直接接続の例外一覧
+- `GET /api/acquisition-routes` — Seneschal向け外部情報の取得経路台帳（55件）の正本。取得元・経路・必要なキー名・キー登録有無（値なし、Seneschal専用の地図キーは `null`）・証跡。登録済みアプリのOriginだけCORS許可。台帳の変更は `acquisition-routes.json` で行い、活動コンソールとSeneschalの写しを同期する
 - `GET /admin` — Cloudflare Access の検証済みトークンに限定（未設定時は503拒否）。現状は閲覧のみ
 - `POST /api/v1/shadow/probe` — サーバー間HMAC署名が必要。実経路ではなく独立読み取り
 
