@@ -73,3 +73,11 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 - New read-only endpoints: `/git-head.json` (served SHA from `RENDER_GIT_COMMIT` only), `/_status/parent`, `/_status/readiness` (productionReady/storage/E2E/DNS all false), and `independentApps` on `/healthz`, `/api/status`, `/api/catalog`.
 - Live QA accepts the pre-deploy 404 or the deployed endpoints, and fails if readiness ever claims productionReady, independent storage, authenticated E2E, DNS or a cutover.
 - Render (`srv-dbm40fp42hec73djn4cg`, auto-deploy OFF) must be manually deployed to the merge commit of this distribution PR.
+
+## Assistant cost guard and answer-contract fields (2026-11-06)
+
+- Canonical reviewed commit: `8f76d282d93646d5e11a4c5b31c1c8d1665dc074` (federation-portal PR #1029 + #1038). All **27** files under `services/firewall-gateway/` are mirrored as exact Git blobs; the supporting `config/firewall-gateway-migration.json` blob is unchanged.
+- `POST /api/v1/assistant/ask` fields follow Seneschal `docs/qa/assistant-answer-contract.md`: request `{appId,question,language,history,context,character,page,requestId?}` (32KB), response `{ok,status,answer,provider,error,requestId}`. The first #1015 relay shape is still accepted as a transitional mapping.
+- Provider calls stay **OFF** unless all of `FIREWALL_ASSISTANT_ENABLED=true`, `FIREWALL_ASSISTANT_PROVIDER` (gemini default / openai), the matching `FIREWALL_ASSISTANT_GEMINI_KEY`/`FIREWALL_ASSISTANT_OPENAI_KEY`, `FIREWALL_ASSISTANT_MODEL`, `FIREWALL_ASSISTANT_BUDGET_MICROS` (≤5,000,000), `FIREWALL_ASSISTANT_MAX_CALL_MICROS` (≤100,000), `FIREWALL_ASSISTANT_EXPIRES_AT` (≤24h after boot) and `FIREWALL_ASSISTANT_CLIENT_IDS` are valid. Keep them unset on Render; do not arm without the owner.
+- Public policy `paidProviderCallsAllowed`/`userDataForwardingAllowed` read `assistant-armed-only`. Live QA accepts that value (or the pre-deploy `false`) and fails on any wider value or on `assistantEnabled:true`.
+- Render (`srv-dbm40fp42hec73djn4cg`, auto-deploy OFF) must be manually deployed to the merge commit of this distribution PR.

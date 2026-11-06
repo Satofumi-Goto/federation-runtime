@@ -31,7 +31,9 @@ export const DIRECT_EXCEPTIONS=Object.freeze([
 export const SECURITY_POLICY=Object.freeze({
  version:'federation-firewall-policy/1',mode:'shadow-hold',defaultCutoverEnabled:false,
  defaultEgressEnabled:false,anonymousProxyAllowed:false,arbitraryDestinationAllowed:false,
- userDataForwardingAllowed:false,paidProviderCallsAllowed:false,dualWritesAllowed:false,
+ // Default false. Only /api/v1/assistant/ask may send the app-supplied question and
+ // character profile to a paid AI provider, and only while armed with budget, expiry and app list.
+ userDataForwardingAllowed:'assistant-armed-only',paidProviderCallsAllowed:'assistant-armed-only',dualWritesAllowed:false,
  legacyRoutesStayEnabled:true,maxConcurrentPerWorker:2,
  maxNewRequestsPerMinutePerWorker:20,requiresRealCanaryProof:true,
  requiresUiParity:true,requiresRollbackProof:true,requiresExplicitRetirementReview:true,
