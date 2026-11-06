@@ -6,6 +6,7 @@ on:
       - 'FIREWALL_DEPLOYMENT.md'
       - 'scripts/verify-firewall-source-attestation.mjs'
       - 'scripts/tests/firewall-source-attestation.test.mjs'
+      - 'config/firewall-gateway-migration.json'
       - '.github/workflows/firewall-phase0-qa.yml'
   push:
     branches: [main]
@@ -13,6 +14,7 @@ on:
       - 'services/firewall-gateway/**'
       - 'scripts/verify-firewall-source-attestation.mjs'
       - 'scripts/tests/firewall-source-attestation.test.mjs'
+      - 'config/firewall-gateway-migration.json'
 permissions:
   contents: read
 jobs:
@@ -26,7 +28,7 @@ jobs:
           node-version: '22'
       - name: Firewall security regression
         run: node --test services/firewall-gateway/test/*.test.mjs
-      - name: Immutable 19-file canonical provenance and anti-tampering check
+      - name: Immutable 27-file canonical provenance and anti-tampering check
         run: |
           node scripts/verify-firewall-source-attestation.mjs
           node --test scripts/tests/firewall-source-attestation.test.mjs

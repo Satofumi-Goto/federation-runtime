@@ -66,3 +66,10 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 - `POST /api/v1/assistant/ask` requires `federation-firewall-hmac/1` signed server-to-server calls from a registered client and rejects Origin, Cookie and Authorization headers. Body: `{"characterId","question","locale"?,"persona"?,"screen"?}` up to 4096 bytes.
 - Provider calls stay **OFF** unless both `FIREWALL_ASSISTANT_ENABLED=true` and `FIREWALL_ASSISTANT_GEMINI_KEY` are set on Render; otherwise 503 `assistant-disabled`. Keep both unset until the owner explicitly arms them. The provider key is never returned or logged.
 - Audit records only type, time, method, status, client and characterId. `/api/status` reports `assistantEnabled:false` by default. This is not a production cutover or WAF.
+
+## Independent origin status + full-tree mirror (2026-11-06)
+
+- Canonical reviewed commit: `5459b4162466dee7347a4480ad5a109d8c594538` (federation-portal PR #1021, on top of #1022). All **27** files under `services/firewall-gateway/` are mirrored as exact Git blobs; `config/firewall-gateway-migration.json` (read by the mirrored tests) is pinned as an attested supporting file.
+- New read-only endpoints: `/git-head.json` (served SHA from `RENDER_GIT_COMMIT` only), `/_status/parent`, `/_status/readiness` (productionReady/storage/E2E/DNS all false), and `independentApps` on `/healthz`, `/api/status`, `/api/catalog`.
+- Live QA accepts the pre-deploy 404 or the deployed endpoints, and fails if readiness ever claims productionReady, independent storage, authenticated E2E, DNS or a cutover.
+- Render (`srv-dbm40fp42hec73djn4cg`, auto-deploy OFF) must be manually deployed to the merge commit of this distribution PR.

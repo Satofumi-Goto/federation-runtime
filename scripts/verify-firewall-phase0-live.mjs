@@ -91,6 +91,27 @@ export async function verifyFirewallPhase0(fetchImpl=fetch){
     assert.equal(registry.response.status,404,'unexpected /api/clients status');
     status.clientRegistry='pending-manual-render-deploy';
   }
+  // Independent-origin status endpoints (served after manual Render deploy).
+  const readiness=await request(fetchImpl,'/_status/readiness');
+  if(readiness.response.status===200){
+    securityHeaders(readiness.response);
+    const r=readiness.data;
+    for(const k of ['productionReady','storageIndependent','authenticatedE2E','dnsVerified','cutoverEnabled'])
+      assert.equal(r[k],false,'readiness must stay honest: '+k);
+    assert.equal(r.verifiedCutovers,0);
+    const head=(await request(fetchImpl,'/git-head.json')).data;
+    assert.ok(head.sha===null||/^[a-f0-9]{40}$/.test(head.sha));
+    assert.equal(head.repository,'Satofumi-Goto/federation-runtime');
+    const parent=(await request(fetchImpl,'/_status/parent')).data;
+    assert.equal(parent.schema,'federation.runtime-child/1');
+    assert.equal(parent.parentVerified,false);
+    status.statusEndpoints='deployed';
+    status.servedSha=head.sha;
+    status.canonicalCommit=head.canonicalCommit;
+  }else{
+    assert.equal(readiness.response.status,404,'unexpected /_status/readiness status');
+    status.statusEndpoints='pending-manual-render-deploy';
+  }
   status.ok=true;
   status.routes=ROUTES.length;
   status.directExceptions=EXCEPTIONS.length;
