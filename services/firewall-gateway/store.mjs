@@ -1,3 +1,4 @@
+import {createRenderValkeyStore} from './renderValkey.mjs';
 // Shared state for replay protection, request budgets and audit records.
 // The memory store is per-process only and reports distributed:false.
 // The Redis REST store (Upstash-compatible) is shared across instances and
@@ -96,6 +97,12 @@ export function createRedisRestStore({url,token,fetchImpl=fetch,timeoutMs=1500,p
 export function storeFromEnv(env=process.env,{fetchImpl=fetch,clock=Date.now}={}){
  const mode=env.FIREWALL_STORE||'memory';
  if(mode==='memory')return {store:createMemoryStore({clock}),error:null};
+ if(mode==='render-valkey'){
+  try{return {store:createRenderValkeyStore({
+    url:env.FIREWALL_STORE_INTERNAL_URL
+  }),error:null};}
+  catch{return {store:null,error:'render-valkey-config-invalid'};}
+ }
  if(mode!=='redis-rest')return {store:null,error:'store-mode-invalid'};
  try{
   return {store:createRedisRestStore({url:env.FIREWALL_STORE_REST_URL,token:env.FIREWALL_STORE_REST_TOKEN,fetchImpl}),error:null};
