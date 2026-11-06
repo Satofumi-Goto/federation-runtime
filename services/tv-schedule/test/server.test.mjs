@@ -77,3 +77,19 @@ test('concurrent requests coalesce to one bounded provider batch',async()=>{
     assert.equal(p.called.length,4);
   }finally{await s.close();}
 });
+
+
+test('throttles anonymous traffic without storing identifiers or blocking health',async()=>{
+  const p=fakeProvider(),s=await startTestServer({fetchImpl:p.fetchImpl});
+  try{
+    for(let i=0;i<30;i++){
+      const r=await fetch(s.url+'/api/v1/tv/schedule');
+      assert.equal(r.status,200,'allowed request '+i);
+    }
+    const limited=await fetch(s.url+'/api/v1/tv/schedule');
+    assert.equal(limited.status,429);
+    assert.equal((await limited.json()).reason,'rate-limited');
+    assert.equal((await fetch(s.url+'/healthz')).status,200);
+    assert.equal(p.called.length,4,'request cap must not cause additional provider traffic');
+  }finally{await s.close();}
+});

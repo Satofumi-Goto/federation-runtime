@@ -26,6 +26,8 @@ function reply(res,status,body,{origin,cache=false}={}){
 }
 export function createTvScheduleService({fetchImpl=fetch,clock=Date.now}={}){
   let cache=null,ongoing=null,failedUntil=0;
+  // Public free-tier bandwidth guard: aggregate fixed window, no IP/address storage.
+  let requestMinute=-1,requestsThisMinute=0;
   async function json(url,signal){
     // Every URL comes from fixed server-owned templates, never a request parameter.
     const parsed=new URL(url);
@@ -115,6 +117,10 @@ export function createTvScheduleService({fetchImpl=fetch,clock=Date.now}={}){
       schema:'federation.tv-schedule/1',cacheReady:Boolean(cache),maxEpisodes:MAX_EPISODES,
       upstream:'tvmaze',personalDataCollected:false},{origin});
     if(path!=='/api/v1/tv/schedule')return reply(res,404,{ok:false,reason:'not-found'},{origin});
+    const minute=Math.floor(clock()/60000);
+    if(minute!==requestMinute){requestMinute=minute;requestsThisMinute=0;}
+    if(++requestsThisMinute>30)
+      return reply(res,429,{ok:false,reason:'rate-limited',retryAfterSeconds:60},{origin});
     try{return reply(res,200,await get(),{origin,cache:true});}
     catch{return reply(res,503,{ok:false,reason:'upstream-unavailable',sourceId:'tvmaze'},{origin});}
   });
