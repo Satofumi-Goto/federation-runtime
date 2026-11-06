@@ -1,3 +1,4 @@
+import {AMENITY_CANDIDATES} from './amenityCandidates.mjs';
 // Immutable allowlist. Shadow mode only: no existing consumer is rerouted.
 export const ROUTES=Object.freeze({
   'japan-holidays':Object.freeze({
@@ -40,5 +41,6 @@ export function publicCatalog(){
  routes:Object.values(ROUTES).map(({id,label,owner,provider,phase,consumers,ttlMs})=>({
   id,label,owner,provider,phase,consumers,ttlMs,switched:false,liveVerified:false,
  })),
- directExceptions:DIRECT_EXCEPTIONS};
+ // Metadata only; these never join ROUTES or create authorized egress.
+ directExceptions:DIRECT_EXCEPTIONS,amenityCandidates:AMENITY_CANDIDATES};
 }
