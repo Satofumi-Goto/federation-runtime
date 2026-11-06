@@ -9,6 +9,11 @@ on:
         required: true
         type: choice
         options: [seneschal]
+      redeploy:
+        description: 既存サービスなら main の最新を再配備する
+        required: false
+        type: boolean
+        default: false
   pull_request:
     paths:
       - .github/workflows/render-create-service.yml
@@ -43,4 +48,5 @@ jobs:
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_APP: ${{ inputs.app }}
+          RENDER_REDEPLOY: ${{ inputs.redeploy }}
         run: node scripts/render-deploy/render-create.mjs
