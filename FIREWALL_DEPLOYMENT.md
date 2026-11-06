@@ -43,9 +43,9 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 
 ## Immutable full-source release gate
 
-- `services/firewall-gateway/source-attestation.json` pins **all 17** code, UI, policy, package and unit-test files to their canonical Git Blob SHA from `Satofumi-Goto/federation-portal@c8380d701ebf197ed8a9e8c213b4fb533ff3c768`.
+- `services/firewall-gateway/source-attestation.json` pins **all 19** code, UI, policy, package and unit-test files to their canonical Git Blob SHA from `Satofumi-Goto/federation-portal@4245e43058b36f8b7da973c4ab57dcc2994d59ef`.
 - `node scripts/verify-firewall-source-attestation.mjs` refuses any source-body change, missing file, newly introduced file, path traversal, or altered provenance. CI executes this gate alongside the existing Firewall security regression suite.
-- When a new canonical upstream PR has been reviewed and merged, refresh the 17-file manifest from the **exact approved upstream commit** and mirror the corresponding Git Blobs in the **same reviewed PR**. Never just update expected hashes to make a modified distribution pass.
+- When a new canonical upstream PR has been reviewed and merged, refresh the 19-file manifest from the **exact approved upstream commit** and mirror the corresponding Git Blobs in the **same reviewed PR**. Never just update expected hashes to make a modified distribution pass.
 - This gate does not have access to the private canonical repository at runtime. It verifies the local distribution against the reviewed upstream source pin, and **cannot detect newer unmirrored upstream commits without a fresh cross-repository inspection**.
 
 ## 26 Seneschal amenity candidates (2026-11-06)
@@ -59,3 +59,10 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 - Nine signed clients (`activity`, `seneschal`, `fleet`, `urban`, `service`, `federation`, `simulator`, `remote-monitoring`, `administration`) plus this gateway = 10 apps. `GET /api/clients` publishes ids, repositories, permitted routes and key presence only; `/api/status` adds `configuredClientIds` and `registeredApps`.
 - No route, egress, canary or cutover change. Live QA accepts either the pre-deploy state (`/api/clients` 404) or the deployed registry, and fails if any 43-char key-like value is published.
 - Render (`srv-dbm40fp42hec73djn4cg`, auto-deploy OFF) must be manually deployed to this commit before the registry is live. Client keys are added only in Render's secret `FIREWALL_CLIENT_KEYS_JSON` and in each app's server secret `FIREWALL_<APP>_HMAC_KEY`.
+
+## Shared signed assistant route, default OFF (2026-11-06)
+
+- Canonical reviewed commit: `4245e43058b36f8b7da973c4ab57dcc2994d59ef` (federation-portal PR #1015). All 19 files under `services/firewall-gateway/` are mirrored as byte-identical Git blobs; the attestation count moves from 17 to 19 (`assistant.mjs`, `test/assistant.test.mjs`).
+- `POST /api/v1/assistant/ask` requires `federation-firewall-hmac/1` signed server-to-server calls from a registered client and rejects Origin, Cookie and Authorization headers. Body: `{"characterId","question","locale"?,"persona"?,"screen"?}` up to 4096 bytes.
+- Provider calls stay **OFF** unless both `FIREWALL_ASSISTANT_ENABLED=true` and `FIREWALL_ASSISTANT_GEMINI_KEY` are set on Render; otherwise 503 `assistant-disabled`. Keep both unset until the owner explicitly arms them. The provider key is never returned or logged.
+- Audit records only type, time, method, status, client and characterId. `/api/status` reports `assistantEnabled:false` by default. This is not a production cutover or WAF.

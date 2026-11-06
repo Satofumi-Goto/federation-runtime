@@ -73,3 +73,11 @@ Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更し
 - 署名：`POST /api/v1/shadow/probe`、本文は `{"routeId":"<ID>"}` のみ、ヘッダー `x-fw-client` / `x-fw-time`（13桁ミリ秒）/ `x-fw-nonce`（UUIDv4）/ `x-fw-signature`。署名対象は `federation-firewall-hmac/1`、client、`POST`、パス、time、nonce、本文SHA-256(hex) を改行で連結し、HMAC-SHA256(hex)。時刻差60秒以内、nonce再利用は409。Origin・Cookie・Authorizationを付けた要求は403（サーバー間専用）。
 - 鍵の登録：各アプリのサーバー側秘密 `FIREWALL_<APP>_HMAC_KEY`（32バイト乱数のbase64url、43文字）と、Render の `FIREWALL_CLIENT_KEYS_JSON` の同じIDの値を、管理画面の秘密設定だけで一致させる。PR・チャット・ログに値を書かない。
 - ルートは `ROUTES[*].consumers` だけで決まる。登録しても外部通信は開かない（egressは期限付きカナリアの3条件のみ）。non-200はすべて旧経路を継続する。
+
+## AI質問の共通導線（標準OFF）
+
+- 10アプリのアバターのタップ（AI質問）を受ける `POST /api/v1/assistant/ask`。`federation-firewall-hmac/1` 署名（`x-fw-client`・`x-fw-time`・`x-fw-nonce`・`x-fw-signature`、署名対象パスは `/api/v1/assistant/ask`）が必須。client ID と鍵は `CLIENT_REGISTRY` と `FIREWALL_CLIENT_KEYS_JSON` を共用。Origin・Cookie・Authorization 付きは403。
+- 本文は `{"characterId","question","locale"?,"persona"?,"screen"?}` のみ、4096バイト以内。`characterId` は呼び出し側で選ばれた担当IDで、`persona` とともに回答の口調指示へ渡す。
+- `FIREWALL_ASSISTANT_ENABLED=true` と `FIREWALL_ASSISTANT_GEMINI_KEY` の**両方**が設定された場合だけ回答。どちらか欠ければ503 `assistant-disabled`。`FIREWALL_ASSISTANT_MODEL` 未設定時は `gemini-2.5-flash`。プロバイダ鍵はサーバー内だけで使い、応答・ログ・ブラウザへ出さない。
+- 12件/ワーカー/分、6件/クライアント/分、同時2件。超過は429、プロバイダ失敗は502。空の成功は返さない。
+- 監査は type・時刻・method・status・client・characterId のみ。質問文・口調指示・回答・署名は記録しない。
