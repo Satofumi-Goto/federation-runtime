@@ -80,7 +80,7 @@ test('concurrent requests coalesce to one bounded provider batch',async()=>{
 
 
 test('throttles anonymous traffic without storing identifiers or blocking health',async()=>{
-  const p=fakeProvider(),s=await start({fetchImpl:p.fetchImpl});
+  const p=fakeProvider(),s=await startTestServer({fetchImpl:p.fetchImpl});
   try{
     for(let i=0;i<30;i++){
       const r=await fetch(s.url+'/api/v1/tv/schedule');
