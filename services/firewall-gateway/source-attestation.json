@@ -1,12 +1,12 @@
 {
   "schema": "federation.firewall-source-attestation/1",
   "canonicalRepository": "Satofumi-Goto/federation-portal",
-  "canonicalCommit": "57ffd744896e109fd4fe4d9e1fc2e79604a1a16b",
+  "canonicalCommit": "c38a1e50c606ef14fea1cf9decdb82dc3aa17b0e",
   "sourcePath": "services/firewall-gateway",
   "distributionRepository": "Satofumi-Goto/federation-runtime",
   "verification": "full-file-Git-blob-sha1",
   "files": {
-    "README.md": "9b138b478eadc054597276bfc78fd7ae725c2feb",
+    "README.md": "d5cd37ee4e2e31ad83c04a5bfe8c7f576ce2626c",
     "access.mjs": "cbf067127a3c7884057d91f2fc4ba1f5a4be3898",
     "amenityCandidates.mjs": "46f327398646d470f57caf78a55a62dc7d42dfe5",
     "assistant.mjs": "d17d6494172180830f22d414f1ceaaf52368fbd6",
@@ -18,7 +18,7 @@
     "origins.mjs": "306118c1baa4315874eaa8482ba060c6191dcd12",
     "package.json": "99d449cc8a3c84cd2ef8b1c7fd11b23e60827095",
     "policy.mjs": "8b3565b07ef0efc329ea214af5675273b3a5c681",
-    "server.mjs": "5678693d559b37e6ecdd42b5d5524709b53b5996",
+    "server.mjs": "68dcefba4b3ce1d181c3fee720284c97c26ccf44",
     "store.mjs": "04cc8ee55b73cdbd9fc06ccaf699e1541c5a4f71",
     "test/amenity-candidates.test.mjs": "79197b83029a452cd010520572eebc3b42b098a7",
     "test/assistant.test.mjs": "661905fa108918d156438da3933f295837b6888a",
@@ -31,7 +31,7 @@
     "test/holiday-parity.test.mjs": "6ed1a342ccc6039af1bf0a77546a23d7e53aa64c",
     "test/origins.test.mjs": "7ddfbce96b645bd36913dda3f4b8006b6087c017",
     "test/policy.test.mjs": "5ac898d03621cd097402d9a4fd4f049c6fc882f3",
-    "test/server.test.mjs": "3312f5ebad83284b14223624bebee50a8447dfac",
+    "test/server.test.mjs": "66878e0e2f9067faf647dff386c32539ec51e6a2",
     "test/store.test.mjs": "bbcd7ec368317c4637404cfb027aac9ef1b6b21f",
     "tools/edge-negative-check.mjs": "74b07a7a411633ee04484d7739b39bea746e5042",
     "ui.mjs": "2faf45867165a48aac40804d02d8819ae0989bc8"

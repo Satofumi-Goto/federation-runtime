@@ -97,6 +97,6 @@ Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更し
 
 - `GET /healthz` — `ok:true`、`stage:shadow-hold`、`productionReady:false`、`cutoverEnabled:false`
 - `GET /git-head.json` — 配信中SHA。Renderが付与する `RENDER_GIT_COMMIT`（40桁）だけを使い、無い・不正なら `sha:null`／`sourceState:unverified-no-platform-sha`。配布リポジトリ `Satofumi-Goto/federation-runtime` と、配布側 `source-attestation.json` の正本コミット（無ければ `null`）
-- `GET /_status/parent` — schema `federation.runtime-child/1`、`service:firewall-standalone`（Gateway名は `gatewayService`）、`parentOrigin:https://federation-runtime.com`、`origin:https://federation-firewall-gateway.onrender.com`、`parentVerified:false`
+- `GET /_status/parent` — schema `federation.runtime-child/1`、`service:firewall-standalone`（Gateway名は `gatewayService`）、`parentOrigin:https://federation-runtime.com`、`origin:https://federation-firewall-gateway.onrender.com`、`parentVerified`・`productionReady`・`authenticatedE2E`・`dnsVerified` はすべて false
 - `GET /_status/readiness` — schema `federation.independent-readiness/1`、`app:firewall`、`frontendHostIndependent:true`（運用画面・状態ページをこのNodeプロセスが配信）、`backendIndependent:true`（Node標準のみ、Base44 SDK・バックエンドなし）、`storageIndependent:false`、`authenticatedE2E:false`、`dnsVerified:false`、`productionReady:false`、`verifiedCutovers:0`。false の項目は `pending` に未達理由
 - 既存の `/`、`/api/status`、`/api/catalog`、`/api/clients` は変更なし

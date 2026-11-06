@@ -67,7 +67,7 @@ export function gitHead(env=process.env,canonicalCommit=readCanonicalCommit()){
 export const FAMILY_APP_ID='firewall';
 export function parentStatus(origin){
  return {schema:'federation.runtime-child/1',service:FAMILY_APP_ID+'-standalone',
-  parentOrigin:PARENT_ORIGIN,origin:origin||null,parentVerified:false,gatewayService:'federation-firewall-gateway'};
+  parentOrigin:PARENT_ORIGIN,origin:origin||null,parentVerified:false,productionReady:false,authenticatedE2E:false,dnsVerified:false,gatewayService:'federation-firewall-gateway'};
 }
 // Only facts with evidence are true. Zero-dependency Node service with no
 // Base44 SDK/backend: backendIndependent. No durable store, no app-UI signed
