@@ -1,0 +1,809 @@
+{
+ "version": 1,
+ "asOf": "2026-11-05",
+ "owner": "firewall-gateway",
+ "consumerApp": "seneschal",
+ "definition": {
+  "primary": "Seneschalが外部APIへ直接取得（ブラウザ又は専用backendを含む）",
+  "secondary": "活動コンソールなど別コンソールが外部APIから収集し、Seneschalが結果を受信",
+  "note": "コード上の経路であり、本番の通信成功ではない。一次・二次が両方ある場合は同時存在／フォールバック。既存接続は切替前に消さない。"
+ },
+ "categories": [
+  {
+   "id": "maps",
+   "label": "地図・レイヤー",
+   "description": "地図の基本情報・防災レイヤー・構内地図",
+   "ids": [
+    "publicMapLinks",
+    "gsiEvacuation",
+    "googleStreetView",
+    "address",
+    "routes"
+   ]
+  },
+  {
+   "id": "poi",
+   "label": "店舗・周辺施設",
+   "description": "飲食・宿泊・商業施設・公衆設備をまとめて探す",
+   "ids": [
+    "nearby",
+    "poiCardOsmTags",
+    "hotpepperGourmet",
+    "rakutenTravel",
+    "tokyoPublicFacility",
+    "alltheplaces",
+    "overturePlaces",
+    "googlePlaces",
+    "googlePlacesExtended",
+    "openPoiDelegated",
+    "overtureDelegated",
+    "nationalLandDelegated",
+    "wikidataDelegated",
+    "reinfolibDelegated",
+    "openChargeMapDelegated"
+   ]
+  },
+  {
+   "id": "weather",
+   "label": "天気・環境",
+   "description": "天気予報・観測・日射量・風・大気・暑さ",
+   "ids": [
+    "weather",
+    "airQuality",
+    "jmaForecast",
+    "wbgt",
+    "amedas",
+    "typhoon"
+   ]
+  },
+  {
+   "id": "safety",
+   "label": "防災・安全",
+   "description": "警報・地震・津波・事故・防犯",
+   "ids": [
+    "jmaWarnings",
+    "jmaQuake",
+    "tsunami",
+    "earthquake",
+    "npaAccidents",
+    "policeCrime"
+   ]
+  },
+  {
+   "id": "mobility",
+   "label": "交通・モビリティ",
+   "description": "道路交通量・公共交通・車両・充電・駐車場",
+   "ids": [
+    "traffic",
+    "vehicle",
+    "chargerAvailability",
+    "gtfsJp",
+    "odptGbfs",
+    "openChargeMap",
+    "parkingOperators"
+   ]
+  },
+  {
+   "id": "public",
+   "label": "公共・医療",
+   "description": "公共施設・医療・介護施設情報",
+   "ids": [
+    "reinfolib",
+    "mhlwMedical",
+    "mhlwCare"
+   ]
+  },
+  {
+   "id": "energy",
+   "label": "エネルギー・価格",
+   "description": "電力・燃料・物価・小売価格",
+   "ids": [
+    "power",
+    "walletDemoPrices",
+    "maffFoodPrice",
+    "estatRetailPrice",
+    "tokubaiFlyers",
+    "enechoPetroleumPrice",
+    "gogogsFuel"
+   ]
+  },
+  {
+   "id": "events",
+   "label": "イベント・生活",
+   "description": "地域イベント・文化イベント・祝日",
+   "ids": [
+    "holidays",
+    "kawasaki_event",
+    "tokyo_koto_event",
+    "tokyo_sumida_event",
+    "doorkeeper_event",
+    "ticketmaster_event"
+   ]
+  }
+ ],
+ "routes": [
+  {
+   "id": "weather",
+   "name": "Open-Meteo 天気予報",
+   "basis": "forecast",
+   "primary": "Seneschal backend externalSignals／EnvironmentForecast（Open-Meteoの天気・気温・降水・日射・風）",
+   "secondary": "活動コンソール externalSignals → Federation共有レコード（Open-Meteoの天気・降水・風等）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "airQuality",
+   "name": "Open-Meteo 大気質",
+   "basis": "estimated",
+   "primary": "Seneschal backend externalSignals（Open-MeteoのPM2.5等）",
+   "secondary": "活動コンソール externalSignals → Federation共有レコード（Open-Meteoの大気質）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "jmaForecast",
+   "name": "気象庁 府県天気予報",
+   "basis": "forecast",
+   "primary": "Seneschal backend externalSignals（気象庁の府県予報）",
+   "secondary": "活動コンソール externalSignals → Federation共有レコード（気象庁の府県予報）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "jmaWarnings",
+   "name": "気象庁 警報・注意報",
+   "basis": "issued",
+   "primary": "Seneschal backend externalSignals（気象庁の警報・注意報）",
+   "secondary": "活動コンソール externalSignals → Federation共有レコード（気象庁の警報・注意報）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "jmaQuake",
+   "name": "気象庁 地震情報",
+   "basis": "observed",
+   "primary": "Seneschal backend externalSignals（気象庁の地震情報）",
+   "secondary": "活動コンソール externalSignals → Federation共有レコード（気象庁の地震情報）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "tsunami",
+   "name": "気象庁 津波情報",
+   "basis": "issued",
+   "primary": "Seneschal backend externalSignals（気象庁の津波情報）",
+   "secondary": "活動コンソール externalSignals → Federation共有レコード（気象庁の津波情報）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "typhoon",
+   "name": "気象庁 台風情報",
+   "basis": "issued",
+   "primary": "Seneschal backend externalSignals（気象庁の台風情報）",
+   "secondary": "活動コンソール externalSignals → Federation共有レコード（気象庁の台風情報）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "earthquake",
+   "name": "P2P地震情報",
+   "basis": "observed",
+   "primary": "Seneschal backend externalSignals（P2P地震情報の発表履歴）",
+   "secondary": "活動コンソール externalSignals → Federation共有レコード（P2P地震情報）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "wbgt",
+   "name": "環境省 熱中症予防情報（暑さ指数）",
+   "basis": "observed",
+   "primary": "Seneschal backend externalSignals（環境省の暑さ指数）",
+   "secondary": "活動コンソール externalSignals → Federation共有レコード（環境省の暑さ指数）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "amedas",
+   "name": "気象庁 アメダス",
+   "basis": "observed",
+   "primary": "Seneschal backend externalSignals（気象庁アメダスの観測値）",
+   "secondary": "活動コンソール externalSignals → Federation共有レコード（気象庁の観測値）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "holidays",
+   "name": "holidays-jp 祝日一覧",
+   "basis": "registered",
+   "primary": "Seneschal backend externalSignals（祝日一覧）",
+   "secondary": "活動コンソール externalSignals → Federation共有レコード（holidays-jpの祝日情報）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "nearby",
+   "name": "OpenStreetMap（Overpass）周辺施設",
+   "basis": "registered",
+   "primary": "Seneschal backend externalSignals／MapExplorationPanel（OSMの周辺施設・設備）",
+   "secondary": "活動コンソール externalSignals／mapPoiShared（OSMのPOI）→ Federation共有レコード／共通POI API。Seneschal Mapへの置換は未実施",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "power",
+   "name": "でんき予報（各電力会社の需給CSV）",
+   "basis": "observed_forecast",
+   "primary": "Seneschal backend externalSignals（電力各社の需給）",
+   "secondary": "活動コンソール externalSignals → Federation共有レコード（電力需給）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "traffic",
+   "name": "JARTIC 交通量（オープンデータ）",
+   "basis": "observed",
+   "primary": "Seneschal backend externalSignals（国交省／JARTICの交通量）",
+   "secondary": "活動コンソール externalSignals → Federation共有レコード（道路交通量）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "address",
+   "name": "国土地理院 逆ジオコーダー",
+   "basis": "registered",
+   "primary": "Seneschal backend externalSignals（国土地理院の逆ジオコード）",
+   "secondary": "活動コンソール externalSignals → Federation共有レコード（住所・市区町村）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "vehicle",
+   "name": "車両情報（残量・航続距離・消費率）",
+   "basis": "sample",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "chargerAvailability",
+   "name": "充電器の空き・稼働・出力・料金",
+   "basis": "未分類",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "routes",
+   "name": "経路・所要時間",
+   "basis": "未分類",
+   "primary": "Seneschalの経路・ETA専用経路（具体APIと実接続は要確認）",
+   "secondary": null,
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "poiCardOsmTags",
+   "name": "OpenStreetMap（Overpass）POIカード補足",
+   "basis": "registered",
+   "primary": "Seneschal POIカードのOSM補足（設備・営業時間等、POI照合）",
+   "secondary": null,
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "publicMapLinks",
+   "name": "国土地理院 地理院地図・重ねるハザードマップ（リンク）",
+   "basis": "registered",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "hotpepperGourmet",
+   "name": "ホットペッパー グルメサーチAPI",
+   "basis": "registered",
+   "primary": "Seneschal searchExternalPoi → ホットペッパー（サーバー認証済み・本番実店舗18件取得）",
+   "secondary": null,
+   "state": "確認済み",
+   "verifiedAt": "2026-11-05T03:20:48.632Z",
+   "evidence": "https://github.com/Satofumi-Goto/seneschal/actions/runs/41960986570",
+   "candidate": "活動コンソールへの集約候補",
+   "requiredKeys": [
+    "HOTPEPPER_API_KEY"
+   ]
+  },
+  {
+   "id": "rakutenTravel",
+   "name": "楽天トラベル 施設検索API",
+   "basis": "registered",
+   "primary": "Seneschal searchExternalPoi → 楽天トラベル（宿泊施設情報、要キー・ライブ疎通確認）",
+   "secondary": null,
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": "活動コンソールへの集約候補",
+   "requiredKeys": [
+    "RAKUTEN_APPLICATION_ID",
+    "RAKUTEN_ACCESS_KEY"
+   ]
+  },
+  {
+   "id": "tokyoPublicFacility",
+   "name": "東京都 公共施設API",
+   "basis": "registered",
+   "primary": "Seneschal searchExternalPoi → 東京都公共施設API（施設名・住所・座標、ライブ疎通確認待ち）",
+   "secondary": null,
+   "state": "確認済み",
+   "verifiedAt": "2026-11-04T12:24:26.528Z",
+   "evidence": "https://github.com/Satofumi-Goto/seneschal/actions/runs/41828960346",
+   "candidate": "活動コンソールへの集約候補",
+   "requiredKeys": []
+  },
+  {
+   "id": "alltheplaces",
+   "name": "AllThePlaces 週次GeoJSON",
+   "basis": "registered",
+   "primary": "Seneschal searchExternalPoi → AllThePlaces週次データ（チェーン店舗情報、ライブ疎通確認待ち）",
+   "secondary": null,
+   "state": "確認済み",
+   "verifiedAt": "2026-11-04T12:24:26.528Z",
+   "evidence": "https://github.com/Satofumi-Goto/seneschal/actions/runs/41828960346",
+   "candidate": "活動コンソールへの集約候補",
+   "requiredKeys": []
+  },
+  {
+   "id": "gtfsJp",
+   "name": "GTFS-JP（標準的なバス情報フォーマット）",
+   "basis": "registered",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "odptGbfs",
+   "name": "公共交通オープンデータセンター（ODPT）GBFS シェアサイクル",
+   "basis": "observed",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "gsiEvacuation",
+   "name": "国土地理院 指定緊急避難場所・指定避難所",
+   "basis": "registered",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "reinfolib",
+   "name": "国交省 不動産情報ライブラリ API",
+   "basis": "registered",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": [
+    "REINFOLIB_API_KEY"
+   ]
+  },
+  {
+   "id": "mhlwMedical",
+   "name": "医療情報ネット（ナビイ）オープンデータ",
+   "basis": "registered",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "mhlwCare",
+   "name": "介護サービス情報公表システム オープンデータ",
+   "basis": "registered",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "npaAccidents",
+   "name": "警察庁 交通事故統計オープンデータ",
+   "basis": "observed",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "policeCrime",
+   "name": "都道府県警 犯罪オープンデータ",
+   "basis": "observed",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "overturePlaces",
+   "name": "Overture Maps Places",
+   "basis": "registered",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "googlePlaces",
+   "name": "Google Places API (New)（POIカード・地図検索）",
+   "basis": "registered",
+   "primary": "Seneschal Google Places／Maps JavaScript（Place ID、建物名、住所、評価・口コミ）",
+   "secondary": null,
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": [
+    "GOOGLE_PLACES_API_KEY"
+   ]
+  },
+  {
+   "id": "googleStreetView",
+   "name": "Google Street View（Maps JavaScript APIの表示機能）",
+   "basis": "registered",
+   "primary": "Seneschal Map → 既存Google Maps JavaScript API → StreetViewService.getPanorama / StreetViewPanorama（ユーザーが操作した時のみ）。Freeは公式Google Maps URLを外部起動",
+   "secondary": null,
+   "state": "確認済み",
+   "verifiedAt": "2026-11-05T11:29:25.612Z",
+   "evidence": "https://github.com/Satofumi-Goto/seneschal/actions/runs/42019310550",
+   "candidate": null,
+   "requiredKeys": [
+    "VITE_GOOGLE_MAPS_API_KEY"
+   ]
+  },
+  {
+   "id": "googlePlacesExtended",
+   "name": "Google Places API (New) 追加フィールド",
+   "basis": "registered",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": [
+    "GOOGLE_PLACES_API_KEY"
+   ]
+  },
+  {
+   "id": "walletDemoPrices",
+   "name": "ウォレット 買い判定の実演価格",
+   "basis": "sample",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "maffFoodPrice",
+   "name": "農林水産省 食品価格動向調査",
+   "basis": "observed",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "estatRetailPrice",
+   "name": "総務省 小売物価統計調査（e-Stat API）",
+   "basis": "observed",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "tokubaiFlyers",
+   "name": "トクバイ（チラシ価格）",
+   "basis": "未分類",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "enechoPetroleumPrice",
+   "name": "資源エネルギー庁 石油製品価格調査",
+   "basis": "observed",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "gogogsFuel",
+   "name": "gogo.gs（投稿ガソリン価格）",
+   "basis": "未分類",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "openChargeMap",
+   "name": "Open Charge Map API",
+   "basis": "registered",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": [
+    "OPENCHARGEMAP_API_KEY"
+   ]
+  },
+  {
+   "id": "parkingOperators",
+   "name": "時間貸し駐車場（akippa・タイムズ）",
+   "basis": "未分類",
+   "primary": null,
+   "secondary": null,
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "kawasaki_event",
+   "name": "川崎市イベント情報API",
+   "basis": "published",
+   "primary": null,
+   "secondary": "活動コンソール publicEvents（選択されたイベント情報源からの取得）→ Seneschal searchPublicEvents → Map・カレンダー（実配備は未検証）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "tokyo_koto_event",
+   "name": "東京都イベント一覧（江東区）",
+   "basis": "published",
+   "primary": null,
+   "secondary": "活動コンソール publicEvents（選択されたイベント情報源からの取得）→ Seneschal searchPublicEvents → Map・カレンダー（実配備は未検証）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "tokyo_sumida_event",
+   "name": "東京都イベント一覧（墨田区）",
+   "basis": "published",
+   "primary": null,
+   "secondary": "活動コンソール publicEvents（選択されたイベント情報源からの取得）→ Seneschal searchPublicEvents → Map・カレンダー（実配備は未検証）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "doorkeeper_event",
+   "name": "DoorkeeperイベントAPI",
+   "basis": "published",
+   "primary": null,
+   "secondary": "活動コンソール publicEvents（選択されたイベント情報源からの取得）→ Seneschal searchPublicEvents → Map・カレンダー（実配備は未検証）",
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": [
+    "DOORKEEPER_API_TOKEN"
+   ]
+  },
+  {
+   "id": "ticketmaster_event",
+   "name": "Ticketmaster Discovery API",
+   "basis": "published",
+   "primary": null,
+   "secondary": "活動コンソール publicEvents（選択されたイベント情報源からの取得）→ Seneschal searchPublicEvents → Map・カレンダー（実配備は未検証）",
+   "state": "接続なし",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": [
+    "TICKETMASTER_API_KEY"
+   ]
+  },
+  {
+   "id": "openPoiDelegated",
+   "name": "OpenPOI API 全国店舗・宿泊・施設",
+   "basis": "registered",
+   "primary": null,
+   "secondary": "活動コンソール 情報源ライブラリで選択 → Seneschal（表示のみ） → Urban Operation Console → OpenPOI（取得元は所有コンソール）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "overtureDelegated",
+   "name": "Overture Maps Places（OpenPOI経由）",
+   "basis": "registered",
+   "primary": null,
+   "secondary": "活動コンソール 情報源ライブラリで選択 → Seneschal（表示のみ） → Urban Operation Console → OpenPOI内のOverture抽出（取得元は所有コンソール）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "nationalLandDelegated",
+   "name": "国土数値情報（OpenPOI収録駅・学校等）",
+   "basis": "registered",
+   "primary": null,
+   "secondary": "活動コンソール 情報源ライブラリで選択 → Seneschal（表示のみ） → Urban Operation Console → OpenPOI抽出（N02/P29/P05等）（取得元は所有コンソール）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "wikidataDelegated",
+   "name": "Wikidata 観光・文化施設",
+   "basis": "registered",
+   "primary": null,
+   "secondary": "活動コンソール 情報源ライブラリで選択 → Seneschal（表示のみ） → Urban Operation Console → Wikidata SPARQL（取得元は所有コンソール）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": []
+  },
+  {
+   "id": "reinfolibDelegated",
+   "name": "国交省 不動産情報ライブラリ施設API",
+   "basis": "registered",
+   "primary": null,
+   "secondary": "活動コンソール 情報源ライブラリで選択 → Seneschal（表示のみ） → Urban Operation Console → Reinfolib XKT系（取得元は所有コンソール）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": [
+    "REINFOLIB_API_KEY"
+   ]
+  },
+  {
+   "id": "openChargeMapDelegated",
+   "name": "Open Charge Map 充電設備POI",
+   "basis": "registered",
+   "primary": null,
+   "secondary": "活動コンソール 情報源ライブラリで選択 → Seneschal（表示のみ） → Service HUB Console → Open Charge Map（取得元は所有コンソール）",
+   "state": "未確認",
+   "verifiedAt": null,
+   "evidence": null,
+   "candidate": null,
+   "requiredKeys": [
+    "OPENCHARGEMAP_API_KEY"
+   ]
+  }
+ ]
+}
