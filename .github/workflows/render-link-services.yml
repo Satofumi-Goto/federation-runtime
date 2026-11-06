@@ -1,0 +1,39 @@
+name: Render link independent services
+# 独立版10サービスの Origin と署名鍵を両側に設定し、再配備して公開確認する。手動起動のみ。
+# 既存の鍵は変えない。鍵はログに出さない。削除・DNS 切替・外部サービスの鍵の設定はしない。
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/render-link-services.yml
+      - scripts/render-deploy/render-link*.mjs
+permissions:
+  contents: read
+concurrency:
+  group: render-link
+  cancel-in-progress: false
+jobs:
+  test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test scripts/render-deploy/render-link.test.mjs
+  link:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test scripts/render-deploy/render-link.test.mjs
+      - name: Link, redeploy and verify
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+        run: node scripts/render-deploy/render-link.mjs
