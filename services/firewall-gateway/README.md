@@ -107,3 +107,12 @@ Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更し
 - 本文上限：history なし 4096バイト（従来どおり）、history あり 16384バイト。超過は413 `too_large`。
 - プロバイダへは history を順番どおりに会話として渡し、最後に question を置く。
 - 監査には `historyCount`（件数）だけを足し、履歴の本文は記録しない。
+
+
+## Render Key Value（無料・非永続）の共有防御モード
+
+- `FIREWALL_STORE=render-valkey`、`FIREWALL_STORE_INTERNAL_URL=redis://red-<private-render-id>:6379` で同じRender workspace/region の**内部ネットワーク**に直接接続する。外部接続・パス指定・URL認証情報・汎用ホスト・任意ポートは拒否。
+- Node内蔵のRESP2を使い、共有nonceのSET NX PX、INCR/PEXPIRE NXの回数制限、本文を含まない監査メタデータだけをLPUSH/LTRIMで保管する。Redisが未設定/停止/異常応答/タイムアウトなら、署名済みHTTP入口も**403/503側に閉じ、上流へ送らない**。
+- `render-valkey` モードは自動的に分散ストア必須となり、別途 `FIREWALL_REQUIRE_DISTRIBUTED_STORE=true` を忘れても保護を無効化できない。通常のShadowメモリモードは変更しない。
+- Render Key Value **Free はメモリのみで、インスタンス再起動でnonce・レートカウント・監査ログが消える。** これは無料の分散検証であって、商用の耐改ざん監査/永続的リプレイ保護ではない。Key Valueを本番の永続ストアへ切り替える際は別PR・予算承認・再検証が必要。
+- Storeの内部URLはサーバー環境変数にだけ設定し、チャット/画面/ブラウザに転送しない。APIルーティングは `gateway=false / legacy=true / HOLD` を保持。
