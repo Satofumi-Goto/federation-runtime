@@ -1,0 +1,46 @@
+name: Render create independent service
+# 独立版アプリの Render Web Service を1つ作成し、初回配備と公開確認をする。手動起動のみ。
+# 秘密値は設定しない（Render 画面で後から設定）。削除・既存サービスの変更・DNS 切替はしない。
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: 作成するアプリ
+        required: true
+        type: choice
+        options: [seneschal]
+  pull_request:
+    paths:
+      - .github/workflows/render-create-service.yml
+      - scripts/render-deploy/render-create*.mjs
+permissions:
+  contents: read
+concurrency:
+  group: render-create-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test scripts/render-deploy/render-create.test.mjs scripts/render-deploy/render-deploy.test.mjs
+  create:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test scripts/render-deploy/render-create.test.mjs
+      - name: Create, deploy and verify
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_APP: ${{ inputs.app }}
+        run: node scripts/render-deploy/render-create.mjs
