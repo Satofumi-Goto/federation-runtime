@@ -20,6 +20,7 @@ const PROVIDERS=Object.freeze({
 });
 export const ASSISTANT_LIMITS=Object.freeze({
  maxRequestBytes:ASSISTANT_MAX_BODY,maxQuestionChars:1200,maxHistory:8,maxHistoryChars:1200,
+ maxLegacyBodyBytes:4096,maxLegacyHistoryBodyBytes:16384,maxLegacyHistory:12,
  maxContextChars:3000,maxPageChars:120,maxAnswerChars:2000,maxOutputTokens:700,
  maxResponseBytes:65536,timeoutMs:15000,
  maxConcurrent:2,maxPerMinute:12,maxPerClientPerMinute:6,
@@ -32,7 +33,9 @@ export const ASSISTANT_POLICY=Object.freeze({
  responseFields:['ok','status','answer','provider','error','requestId'],
  providers:Object.keys(PROVIDERS),providerKeyInBrowser:false,signedServerToServerOnly:true,
  requiresBudgetAndExpiry:true,personaOwner:'each-app (characterProfile)',
- auditFields:['type','at','method','status','client','characterId'],questionOrAnswerLogged:false,
+ auditFields:['type','at','method','status','client','characterId','historyCount'],questionOrAnswerLogged:false,
+ legacyShape:Object.freeze({version:'v1.1',fields:['characterId','question','locale','persona','screen','history'],
+  maxBodyBytes:4096,maxBodyBytesWithHistory:16384,maxHistory:12,maxHistoryChars:1200,historyRoles:['user','assistant']}),
  maxBodyBytes:ASSISTANT_LIMITS.maxRequestBytes,maxConcurrentPerWorker:ASSISTANT_LIMITS.maxConcurrent,
  maxNewRequestsPerMinutePerWorker:ASSISTANT_LIMITS.maxPerMinute,
  maxNewRequestsPerMinutePerClient:ASSISTANT_LIMITS.maxPerClientPerMinute,
@@ -80,11 +83,19 @@ function parseCharacter(c){
  return {ok:true,character:out};
 }
 
-// Transitional: the first #1015 shape {characterId,question,locale?,persona?,screen?}
+// Transitional: the first #1015 shape {characterId,question,locale?,persona?,screen?,history?}
+// (v1.1 adds the optional history: up to 12 user/assistant turns, 1200 chars each;
+// body limit 4096 bytes, or 16384 bytes only when history is present)
 // (used by apps/remote-monitoring/server/assistant-relay.mjs) is mapped onto the
 // contract; appId then comes from the signed client. Remove once relays send the contract.
-const LEGACY_KEYS=new Set(['characterId','question','locale','persona','screen']);
-function legacyToContract(q){
+const LEGACY_KEYS=new Set(['characterId','question','locale','persona','screen','history']);
+const validTurns=(h,max)=>Array.isArray(h)&&h.length>=1&&h.length<=max&&h.every(m=>m&&typeof m==='object'&&!Array.isArray(m)
+ &&Object.keys(m).length===2&&Object.keys(m).every(k=>k==='role'||k==='content')&&['user','assistant'].includes(m.role)
+ &&str(m.content,ASSISTANT_LIMITS.maxHistoryChars,{required:true}));
+function legacyToContract(q,bytes){
+ const L=ASSISTANT_LIMITS;
+ if(q.history!==undefined&&!validTurns(q.history,L.maxLegacyHistory))return null;
+ if(bytes>(q.history===undefined?L.maxLegacyBodyBytes:L.maxLegacyHistoryBodyBytes))return {tooLarge:true};
  if(typeof q.characterId!=='string'||!/^[a-z0-9-]{1,64}$/.test(q.characterId))return null;
  if(typeof q.question!=='string'||!q.question.trim()||[...q.question].length>ASSISTANT_LIMITS.maxQuestionChars)return null;
  if(q.locale!==undefined&&q.locale!=='ja'&&q.locale!=='en')return null;
@@ -92,7 +103,8 @@ function legacyToContract(q){
  if(q.screen!==undefined&&!(typeof q.screen==='string'&&/^[A-Za-z0-9/_.:-]{0,120}$/.test(q.screen)))return null;
  const character={id:q.characterId};
  if(q.persona&&q.persona.trim())character.personality=q.persona.trim();
- return {appId:null,language:q.locale||'ja',question:q.question.trim(),history:[],context:'',
+ const history=q.history===undefined?[]:q.history.map(m=>({role:m.role,content:m.content}));
+ return {appId:null,language:q.locale||'ja',question:q.question.trim(),history,context:'',
   page:q.screen||'',character,requestId:null,legacyShape:true};
 }
 
@@ -102,7 +114,8 @@ export function parseAssistantCommand(body){
  try{q=JSON.parse(body);}catch{return {ok:false,error:'invalid_question',requestId:null};}
  if(!q||typeof q!=='object'||Array.isArray(q))return {ok:false,error:'invalid_question',requestId:null};
  if(q.appId===undefined&&q.characterId!==undefined&&Object.keys(q).every(k=>LEGACY_KEYS.has(k))){
-  const command=legacyToContract(q);
+  const command=legacyToContract(q,Buffer.byteLength(body,'utf8'));
+  if(command?.tooLarge)return {ok:false,error:'too_large',status:413,requestId:null};
   return command?{ok:true,command}:{ok:false,error:'invalid_question',requestId:null};
  }
  const requestId=typeof q.requestId==='string'&&/^[A-Za-z0-9_.:-]{1,64}$/.test(q.requestId)?q.requestId:null;

@@ -106,11 +106,12 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     }));}catch{/* Observability must not interrupt responses. */}
   });
   // Assistant audit: never record question, persona, answer, signature or IP.
-  let askClient=null,askCharacter=null;
+  let askClient=null,askCharacter=null,askHistory=null;
   if(path===ASSISTANT_PATH)res.once('finish',()=>{
     try{auditSink(JSON.stringify({
       type:'firewall.assistant.request',at:new Date(clock()).toISOString(),
       method:req.method,status:res.statusCode,client:askClient,characterId:askCharacter,
+      historyCount:askHistory,
     }));}catch{/* Observability must not interrupt responses. */}
   });
   if(!req.url||req.url.length>1024)return reply(res,414,{ok:false,reason:'invalid-target'});
@@ -195,8 +196,9 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       :deny(identity.status,'origin_not_allowed',{reason:identity.reason});
     askClient=identity.client;signedClients.add(identity.client);
     const parsed=parseAssistantCommand(body);
-    if(!parsed.ok)return deny(400,parsed.error,{requestId:parsed.requestId});
+    if(!parsed.ok)return deny(parsed.status||400,parsed.error,{requestId:parsed.requestId});
     askCharacter=parsed.command.character?.id||null;
+    askHistory=parsed.command.history.length;
     const result=await assistant.ask(identity.client,parsed.command);
     return reply(res,result.status,result.result,
       result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});

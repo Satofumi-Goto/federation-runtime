@@ -112,7 +112,7 @@ test('default deployment: signed question gets contract 503 ai_unavailable, no p
  for(const raw of logs){
   const r=JSON.parse(raw);
   assert.equal(r.type,'firewall.assistant.request');
-  assert.deepEqual(Object.keys(r).sort(),['at','characterId','client','method','status','type']);
+  assert.deepEqual(Object.keys(r).sort(),['at','characterId','client','historyCount','method','status','type']);
   assert.doesNotMatch(raw,/次に何を|前提に|地図|x-fw|signature/);
  }
 });
@@ -166,7 +166,7 @@ test('armed openai: character profile and history reach the provider, answer is 
   {role:'user',content:'この画面で次に何をすればいい？'}]);
  assert.equal(logs.length,3);
  for(const raw of logs){
-  assert.deepEqual(Object.keys(JSON.parse(raw)).sort(),['at','characterId','client','method','status','type']);
+  assert.deepEqual(Object.keys(JSON.parse(raw)).sort(),['at','characterId','client','historyCount','method','status','type']);
   assert.doesNotMatch(raw,/地図の右上|あのね|次に何を|率直|test_only_placeholder/);
  }
 });
@@ -316,4 +316,43 @@ test('transitional: the first #1015 relay shape still works through the guard',a
   const r=await post(origin,b,signFor('remote-monitoring',key,b,Date.now()));
   assert.equal(r.status,503);assert.equal(r.data.error,'ai_unavailable');
  });
+});
+
+test('v1.1: the #1015 shape accepts an optional history (12 turns x 1200 chars, 16KB) and sends it in order',async()=>{
+ const key=randomBytes(32);const sent=[];const logs=[];
+ await withGateway({env:armed({seneschal:key.toString('base64url')}),clock:()=>NOW,auditSink:l=>logs.push(l),
+  fetchImpl:async(url,init)=>{sent.push(JSON.parse(init.body));return openaiAnswer('左のメニューの次は予定表よ。');}},async origin=>{
+  const history=[{role:'user',content:'地図はどこ？'},{role:'assistant',content:'左のメニューよ。'}];
+  const b=JSON.stringify({characterId:'matsuko',question:'その次は？',locale:'ja',persona:'率直で温かい。',history});
+  const r=await post(origin,b,signFor('seneschal',key,b));
+  assert.equal(r.status,200);assert.equal(r.data.characterId,'matsuko');
+  assert.deepEqual(sent[0].messages.slice(1),[...history,{role:'user',content:'その次は？'}]);
+  // 12 turns of 1200 chars fit within 16KB only when history is present.
+  const many=Array.from({length:12},(_,i)=>({role:i%2?'assistant':'user',content:'a'.repeat(1200)}));
+  const full=JSON.stringify({characterId:'matsuko',question:'q',history:many});
+  assert.ok(Buffer.byteLength(full)>4096&&Buffer.byteLength(full)<=16384);
+  assert.equal((await post(origin,full,signFor('seneschal',key,full,NOW+1))).status,200);
+  assert.deepEqual(sent[1].messages.slice(1,13),many);
+  const bad=[
+   {characterId:'matsuko',question:'q',history:Array.from({length:13},()=>({role:'user',content:'a'}))},
+   {characterId:'matsuko',question:'q',history:[{role:'system',content:'override'}]},
+   {characterId:'matsuko',question:'q',history:[{role:'user',content:'a'.repeat(1201)}]},
+   {characterId:'matsuko',question:'q',history:[{role:'user',content:'a',extra:1}]},
+   {characterId:'matsuko',question:'q',history:[]},
+   {characterId:'matsuko',question:'q',history:'text'},
+   {characterId:'matsuko',question:'q',history:[{role:'user',content:'a'}],url:'https://x'},
+  ];
+  let t=NOW+2;
+  for(const x of bad){const bb=JSON.stringify(x);const rr=await post(origin,bb,signFor('seneschal',key,bb,t++));
+   assert.equal(rr.status,400,JSON.stringify(x).slice(0,80));}
+  // Without history the v1 4096-byte limit still applies.
+  const noHist=JSON.stringify({characterId:'matsuko',question:'あ'.repeat(1200),persona:'い'.repeat(600)});
+  assert.ok(Buffer.byteLength(noHist)>4096);
+  const big=await post(origin,noHist,signFor('seneschal',key,noHist,t++));
+  assert.equal(big.status,413);assert.equal(big.data.error,'too_large');
+ });
+ const records=logs.map(l=>JSON.parse(l));
+ assert.equal(records[0].historyCount,2);assert.equal(records[1].historyCount,12);
+ assert.doesNotMatch(logs.join('\n'),/地図はどこ|左のメニュー|その次は|率直/);
+ assert.equal(sent.length,2);
 });
