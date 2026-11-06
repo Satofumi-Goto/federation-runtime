@@ -76,11 +76,17 @@ Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更し
 
 ## AI質問の共通導線（標準OFF）
 
-- 10アプリのアバターのタップ（AI質問）を受ける `POST /api/v1/assistant/ask`。`federation-firewall-hmac/1` 署名（`x-fw-client`・`x-fw-time`・`x-fw-nonce`・`x-fw-signature`、署名対象パスは `/api/v1/assistant/ask`）が必須。client ID と鍵は `CLIENT_REGISTRY` と `FIREWALL_CLIENT_KEYS_JSON` を共用。Origin・Cookie・Authorization 付きは403。
-- 本文は `{"characterId","question","locale"?,"persona"?,"screen"?}` のみ、4096バイト以内。`characterId` は呼び出し側で選ばれた担当IDで、`persona` とともに回答の口調指示へ渡す。
-- `FIREWALL_ASSISTANT_ENABLED=true` と `FIREWALL_ASSISTANT_GEMINI_KEY` の**両方**が設定された場合だけ回答。どちらか欠ければ503 `assistant-disabled`。`FIREWALL_ASSISTANT_MODEL` 未設定時は `gemini-2.5-flash`。プロバイダ鍵はサーバー内だけで使い、応答・ログ・ブラウザへ出さない。
-- 12件/ワーカー/分、6件/クライアント/分、同時2件。超過は429、プロバイダ失敗は502。空の成功は返さない。
-- 監査は type・時刻・method・status・client・characterId のみ。質問文・口調指示・回答・署名は記録しない。
+- `POST /api/v1/assistant/ask`：アバターのタップ＝質問の共通入口。項目はSeneschalの回答契約（`docs/qa/assistant-answer-contract.md`）と同じ。
+  - 要求：`{appId, question, language, history, context, character, page, requestId?}`。`appId` は seneschal / federation / simulator / fleet / service-hub（＝service）/ urban / activity / administration / remote-monitoring。`question` 1〜1200字、`history` 8件以内（user/assistant、各1200字）、`context` 3000字、`page` 120字、本文32KB。
+  - `character` は各アプリの `characterProfile(assistant)` の出力をそのまま受け取る（id・name・personality・firstPerson・secondPerson・tone・rhythm・length・opening・followUp・acknowledgments・endings・rules・reactionStyle・directness・humor・empathy・actionBias）。Gatewayは個性を定義・上書きしない。未知キーは400。
+  - 応答：200 `{ok:true,status:"answered",answer,provider}`／400 `invalid_question|invalid_app`／403 `origin_not_allowed`／413 `too_large`／429 `{status:"denied",error:"rate_limited"}`／503 `ai_unavailable`。すべてに `status` と `requestId` を付ける。
+- 送信方式は契約と異なり、各アプリのサーバーが `FIREWALL_CLIENT_KEYS_JSON` の自アプリ鍵でHMAC署名する（署名パス `/api/v1/assistant/ask`）。Origin・Cookie・Authorization付き（ブラウザ由来）は403。署名クライアントと `appId` が違えば403。
+- AIプロバイダー呼出しは次の**すべて**が起動時に有効な場合だけ：`FIREWALL_ASSISTANT_ENABLED=true`、`FIREWALL_ASSISTANT_PROVIDER`（gemini（既定）/ openai）、選んだプロバイダーの鍵 `FIREWALL_ASSISTANT_GEMINI_KEY` または `FIREWALL_ASSISTANT_OPENAI_KEY`、`FIREWALL_ASSISTANT_MODEL`（gemini未設定時 `gemini-2.5-flash`）、`FIREWALL_ASSISTANT_BUDGET_MICROS`（上限5,000,000＝5USD相当）、`FIREWALL_ASSISTANT_MAX_CALL_MICROS`（上限100,000、予算以下）、`FIREWALL_ASSISTANT_EXPIRES_AT`（ミリ秒付きUTC、起動から24時間以内）、`FIREWALL_ASSISTANT_CLIENT_IDS`（有効にするアプリIDのカンマ区切り）。1件でも欠ければ全アプリOFF。
+- OFF・期限切れ・予算超過・有効対象外・プロバイダー障害（HTTPエラー・リダイレクト・応答不良）は503 `ai_unavailable`。上限は同時2・12件/分・6件/アプリ/分（429）。呼出し前に1回分の上限額を予約し、返金しない。予算・レート・同時実行はワーカー内メモリで、再起動でリセットされる。
+- 公開ポリシーの `paidProviderCallsAllowed`・`userDataForwardingAllowed` は `assistant-armed-only`（上記の全条件が揃ったassistantだけの例外、既定は不可）。
+- 監査は時刻・方式・状態・クライアント・characterIdのみ。質問・履歴・画面情報・人格設定・回答・鍵・署名は記録しない。
+- 移行措置：既存の `apps/remote-monitoring/server/assistant-relay.mjs`・`runtime/independent/assistant-relay.mjs` が送る旧形式 `{characterId,question,locale?,persona?,screen?}` も受け付け、`appId` は署名クライアント、`persona` は `character.personality`、`screen` は `page` として扱う（上の歯止めはすべて同じく適用）。
+- 既定の配備ではAI呼出しは行われない。各アプリ側の呼出し実装・鍵配布・実プロバイダー疎通・費用実測は未実施で、別PR・別検証とする。
 
 ## 10アプリの独立Originと接続状態（2026-11-06）
 

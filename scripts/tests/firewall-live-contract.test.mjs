@@ -13,7 +13,7 @@ const response=(data,status=200,html=false)=>new Response(html?data:JSON.stringi
   ...(html?{'Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"}:{})}
 });
 const clients=['activity','seneschal','fleet','urban','service','federation','simulator','remote-monitoring','administration'];
-function mock({egress=false,adminStatus=503,registry=false,keys=false,leak=false}={}){
+function mock({egress=false,adminStatus=503,registry=false,keys=false,leak=false,paid=false,assistant}={}){
  const calls=[];
  const fetchImpl=async(url,init)=>{
   assert.ok(url.startsWith(ORIGIN+'/'),'outbound source must be the Gateway only');
@@ -29,8 +29,8 @@ function mock({egress=false,adminStatus=503,registry=false,keys=false,leak=false
   if(path==='/api/clients')return registry?response({appCount:10,signing:{version:'federation-firewall-hmac/1'},
    clients:clients.map(id=>({id,keyConfigured:keys&&id==='activity',gatewayEgressActive:false,...(leak?{key:'A'.repeat(43)}:{})}))})
    :response({ok:false,reason:'not-found'},404);
-  if(path==='/api/status')return response({configuredClients:keys,...(registry?{configuredClientIds:keys?['activity']:[]}:{}),canaryEgressEnabled:egress,productionReady:false,cutoverEnabled:false,legacyConnectionsPreserved:true});
-  if(path==='/api/catalog')return response({policy:{version:'federation-firewall-policy/1',mode:'shadow-hold',defaultCutoverEnabled:false,defaultEgressEnabled:false,paidProviderCallsAllowed:false},
+  if(path==='/api/status')return response({configuredClients:keys,...(registry?{configuredClientIds:keys?['activity']:[]}:{}),canaryEgressEnabled:egress,...(assistant===undefined?{}:{assistantEnabled:assistant}),productionReady:false,cutoverEnabled:false,legacyConnectionsPreserved:true});
+  if(path==='/api/catalog')return response({policy:{version:'federation-firewall-policy/1',mode:'shadow-hold',defaultCutoverEnabled:false,defaultEgressEnabled:false,paidProviderCallsAllowed:paid,...(paid?{userDataForwardingAllowed:paid}:{})},
    routes:routes.map(id=>({id,phase:'shadow-hold',switched:false,liveVerified:false})),
    directExceptions:exceptions.map(id=>({id}))});
   if(path==='/')return response('SHADOW NO CUTOVER Egress Canary LOCKED 0 / 3',200,true);
@@ -70,4 +70,10 @@ test('Verifier checks the ten-app registry once deployed and never accepts publi
  assert.equal(r.statusEndpoints,'deployed');
  assert.equal(r.servedSha,'a'.repeat(40));
  await assert.rejects(()=>verifyFirewallPhase0(mock({registry:true,keys:true,leak:true}).fetchImpl),/key material/);
+});
+
+test('Verifier accepts the assistant-armed-only policy but rejects a widened policy or an armed assistant',async()=>{
+ assert.equal((await verifyFirewallPhase0(mock({registry:true,paid:'assistant-armed-only',assistant:false}).fetchImpl)).ok,true);
+ await assert.rejects(()=>verifyFirewallPhase0(mock({registry:true,paid:true}).fetchImpl),/paid provider policy widened/);
+ await assert.rejects(()=>verifyFirewallPhase0(mock({registry:true,paid:'assistant-armed-only',assistant:true}).fetchImpl),/assistant must stay default-off/);
 });

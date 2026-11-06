@@ -59,7 +59,10 @@ export async function verifyFirewallPhase0(fetchImpl=fetch){
   assert.equal(catalog.policy.mode,'shadow-hold');
   assert.equal(catalog.policy.defaultCutoverEnabled,false);
   assert.equal(catalog.policy.defaultEgressEnabled,false);
-  assert.equal(catalog.policy.paidProviderCallsAllowed,false);
+  // Pre-deploy false; from canonical 8f76d28 only the armed assistant may call a paid provider.
+  assert.ok([false,'assistant-armed-only'].includes(catalog.policy.paidProviderCallsAllowed),'paid provider policy widened');
+  assert.ok([undefined,false,'assistant-armed-only'].includes(catalog.policy.userDataForwardingAllowed),'user data forwarding widened');
+  if(Object.hasOwn(state,'assistantEnabled'))assert.equal(state.assistantEnabled,false,'assistant must stay default-off');
   assert.deepEqual(catalog.routes.map(r=>r.id),ROUTES);
   assert.ok(catalog.routes.every(r=>r.phase==='shadow-hold'&&!r.switched&&!r.liveVerified));
   assert.deepEqual(catalog.directExceptions.map(r=>r.id),EXCEPTIONS);

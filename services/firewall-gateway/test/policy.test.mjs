@@ -5,7 +5,8 @@ test('shadow-only default preserves every incumbent',()=>{
  assert.equal(SECURITY_POLICY.defaultCutoverEnabled,false);
  assert.equal(SECURITY_POLICY.legacyRoutesStayEnabled,true);
  assert.equal(SECURITY_POLICY.anonymousProxyAllowed,false);
- assert.equal(SECURITY_POLICY.paidProviderCallsAllowed,false);
+ assert.equal(SECURITY_POLICY.paidProviderCallsAllowed,'assistant-armed-only');
+ assert.equal(SECURITY_POLICY.userDataForwardingAllowed,'assistant-armed-only');
  assert.ok(Object.values(ROUTES).every(r=>r.phase==='shadow-hold'));
  assert.ok(publicCatalog().routes.every(r=>r.switched===false&&r.liveVerified===false));
 });

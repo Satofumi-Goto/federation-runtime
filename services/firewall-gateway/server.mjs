@@ -168,20 +168,25 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});
    }
    if(path===ASSISTANT_PATH){
+    // Field names follow the assistant answer contract; transport is HMAC server-to-server only.
+    const deny=(status,error,extra={},headers={})=>reply(res,status,{ok:false,
+      status:status===503?'unavailable':'denied',error,requestId:null,...extra},headers);
     if(req.headers.origin||req.headers.cookie||req.headers.authorization)
-     return reply(res,403,{ok:false,reason:'server-to-server-only'});
-    if(req.method!=='POST')return reply(res,405,{ok:false,reason:'method-not-allowed'});
+     return deny(403,'origin_not_allowed',{reason:'server-to-server-only'});
+    if(req.method!=='POST')return deny(405,'method_not_allowed');
     if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
-     return reply(res,415,{ok:false,reason:'json-required'});
+     return deny(415,'invalid_question');
     let body;
     try{body=await limitedBody(req,ASSISTANT_MAX_BODY);}
-    catch{return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});}
+    catch{return deny(413,'too_large',{},{Connection:'close'});}
     const identity=auth.verify(req,body,path);
-    if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
+    if(!identity.ok)return identity.status===503
+      ?deny(503,'ai_unavailable',{reason:identity.reason})
+      :deny(identity.status,'origin_not_allowed',{reason:identity.reason});
     askClient=identity.client;signedClients.add(identity.client);
     const parsed=parseAssistantCommand(body);
-    if(!parsed.ok)return reply(res,parsed.status,{ok:false,reason:parsed.reason});
-    askCharacter=parsed.command.characterId;
+    if(!parsed.ok)return deny(400,parsed.error,{requestId:parsed.requestId});
+    askCharacter=parsed.command.character?.id||null;
     const result=await assistant.ask(identity.client,parsed.command);
     return reply(res,result.status,result.result,
       result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});
