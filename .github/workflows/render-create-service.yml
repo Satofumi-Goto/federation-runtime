@@ -8,7 +8,7 @@ on:
         description: 作成するアプリ
         required: true
         type: choice
-        options: [seneschal]
+        options: [seneschal, federation, simulator, fleet, urban, service-hub, life, remote-monitoring, administration]
       redeploy:
         description: 既存サービスなら main の最新を再配備する
         required: false
