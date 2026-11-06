@@ -30,3 +30,12 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 - An additional `FIREWALL_GITHUB_CANARY_OIDC=true` gate enables a one-purpose `POST /api/v1/canary/github` only from the pinned GitHub owner push workflow (signed JWT, issuer, audience, repo-id, ref, workflow-ref, actor-id, expiry, nonce). GitHub ID tokens are never printed or stored.
 - This is only source preparation. Do not arm egress or claim verified parity without deployment, a successful one-shot GitHub-signed live request, and independent legacy-source full-data comparison.
 - The Activity application HMAC secret is still not configured in Base44. A successful GitHub canary is *not* Activity signed E2E; the incumbent must remain active.
+
+
+## Phase 1.3 (2026-11-06) — time-boxed canary safety gate
+
+- Canonical source: `Satofumi-Goto/federation-portal@be6a7e033d5a622f41569ff4a1a330662ee95d8f` (PR #1005); `egress.mjs`, `test/github-canary.test.mjs`, `test/canary-expiry.test.mjs` and `README.md` are mirrored bit-for-bit.
+- Upstream egress requires **all three**: `FIREWALL_CANARY_EGRESS=true`, `FIREWALL_CANARY_ROUTE_IDS=japan-holidays`, and `FIREWALL_CANARY_EXPIRES_AT` in strict UTC ISO8601 with milliseconds between the process startup time and 10 minutes later. This is *not* a production route cutover.
+- Expired requests, expired cached responses, and upstream responses returning after expiration are rejected. A restart with an old timestamp cannot reopen traffic.
+- Render is initially configured for egress OFF. Publishing this source does not require altering secrets or arming a canary. Any time-boxed future test also requires signed authorization and a post-test OFF verification.
+- The local replay cache, stdout audit, single instance budget and Render routing are not a production WAF or shared immutable ledger. Separate security work remains required before any permanent switching.
