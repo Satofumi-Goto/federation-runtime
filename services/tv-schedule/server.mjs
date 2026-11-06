@@ -3,6 +3,7 @@
 import http from 'node:http';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
+import {createOnlineActivitiesCollector} from './activities.mjs';
 const PROVIDER='https://api.tvmaze.com';
 const MAX_EPISODES=12;
 const TTL=30*60*1000;
@@ -36,6 +37,7 @@ function reply(res,status,body,{origin,origins,cache=false}={}){
 }
 export function createTvScheduleService({fetchImpl=fetch,clock=Date.now,env=process.env}={}){
   const origins=allowedOrigins(env);
+  const activities=createOnlineActivitiesCollector(fetchImpl,clock);
   let cache=null,ongoing=null,failedUntil=0;
   // Public free-tier bandwidth guard: aggregate fixed window, no IP/address storage.
   let requestMinute=-1,requestsThisMinute=0;
@@ -120,6 +122,8 @@ export function createTvScheduleService({fetchImpl=fetch,clock=Date.now,env=proc
     if(u.length>150||u.includes('?')||u.includes('#')){
       return reply(res,400,{ok:false,reason:'unsupported-query'},{origin,origins});
     }
+    if(req.method==='OPTIONS'&&path==='/api/v1/activities/upcoming')
+      return reply(res,204,null,{origin,origins});
     if(req.method==='OPTIONS'&&path==='/api/v1/tv/schedule')
       return reply(res,204,null,{origin,origins});
     if(req.method!=='GET')return reply(res,405,{ok:false,reason:'read-only'},{origin,origins});
@@ -127,11 +131,16 @@ export function createTvScheduleService({fetchImpl=fetch,clock=Date.now,env=proc
     if(path==='/api/status')return reply(res,200,{service:'federation-tv-schedule',
       schema:'federation.tv-schedule/1',cacheReady:Boolean(cache),maxEpisodes:MAX_EPISODES,
       upstream:'tvmaze',personalDataCollected:false},{origin,origins});
-    if(path!=='/api/v1/tv/schedule')return reply(res,404,{ok:false,reason:'not-found'},{origin,origins});
+    if(path!=='/api/v1/tv/schedule'&&path!=='/api/v1/activities/upcoming')
+      return reply(res,404,{ok:false,reason:'not-found'},{origin,origins});
     const minute=Math.floor(clock()/60000);
     if(minute!==requestMinute){requestMinute=minute;requestsThisMinute=0;}
     if(++requestsThisMinute>30)
       return reply(res,429,{ok:false,reason:'rate-limited',retryAfterSeconds:60},{origin,origins});
+    if(path==='/api/v1/activities/upcoming'){
+      try{return reply(res,200,await activities.get(),{origin,origins,cache:true});}
+      catch{return reply(res,503,{ok:false,reason:'activities-unavailable'},{origin,origins});}
+    }
     try{return reply(res,200,await get(),{origin,origins,cache:true});}
     catch{return reply(res,503,{ok:false,reason:'upstream-unavailable',sourceId:'tvmaze'},{origin,origins});}
   });
