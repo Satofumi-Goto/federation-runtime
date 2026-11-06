@@ -6,6 +6,8 @@ import {fileURLToPath} from 'node:url';
 
 export const ORIGIN='https://federation-firewall-gateway.onrender.com';
 const ROUTES=['japan-holidays','jma-earthquake-list','open-meteo-tokyo'];
+const CLIENTS=['activity','seneschal','fleet','urban','service','federation','simulator',
+ 'remote-monitoring','administration'];
 const EXCEPTIONS=['google-maps-js','google-places','personal-calendar-auth',
  'fleet-dispatch-control','booking-payment','map-24h-forecast'];
 async function request(fetchImpl,path,method='GET'){
@@ -48,8 +50,9 @@ export async function verifyFirewallPhase0(fetchImpl=fetch){
   assert.equal(health.productionReady,false);
   assert.equal(health.cutoverEnabled,false);
   const state=(await check('/api/status')).data;
-  for(const key of ['configuredClients','canaryEgressEnabled','productionReady','cutoverEnabled'])
+  for(const key of ['canaryEgressEnabled','productionReady','cutoverEnabled'])
     assert.equal(state[key],false,'must remain disabled '+key);
+  assert.equal(typeof state.configuredClients,'boolean');
   assert.equal(state.legacyConnectionsPreserved,true);
   const catalog=(await check('/api/catalog')).data;
   assert.equal(catalog.policy.version,'federation-firewall-policy/1');
@@ -67,8 +70,27 @@ export async function verifyFirewallPhase0(fetchImpl=fetch){
   assert.equal(admin.reason,'admin-access-unconfigured');
   const wrongMethod=(await check('/api/v1/shadow/probe','GET',405)).data;
   assert.equal(wrongMethod.reason,'method-not-allowed');
-  const unsigned=(await check('/api/v1/shadow/probe','POST',503)).data;
-  assert.equal(unsigned.reason,'service-auth-unconfigured');
+  const unsignedStatus=state.configuredClients?401:503;
+  const unsigned=(await check('/api/v1/shadow/probe','POST',unsignedStatus)).data;
+  assert.equal(unsigned.reason,state.configuredClients?'signature-required':'service-auth-unconfigured');
+  // Ten-app client registry (served after the manual Render deploy of the registry release).
+  const registry=await request(fetchImpl,'/api/clients');
+  if(registry.response.status===200){
+    securityHeaders(registry.response);
+    status.checks.push({method:'GET',path:'/api/clients',http:200});
+    const r=registry.data;
+    assert.equal(r.appCount,10);
+    assert.deepEqual(r.clients.map(c=>c.id),CLIENTS);
+    assert.ok(r.clients.every(c=>typeof c.keyConfigured==='boolean'&&c.gatewayEgressActive===false));
+    assert.equal(r.signing.version,'federation-firewall-hmac/1');
+    assert.doesNotMatch(registry.raw,/"[A-Za-z0-9_-]{43}"/,'key material must never be published');
+    assert.deepEqual(state.configuredClientIds,r.clients.filter(c=>c.keyConfigured).map(c=>c.id).sort());
+    status.clientRegistry='deployed';
+    status.configuredClientIds=state.configuredClientIds;
+  }else{
+    assert.equal(registry.response.status,404,'unexpected /api/clients status');
+    status.clientRegistry='pending-manual-render-deploy';
+  }
   status.ok=true;
   status.routes=ROUTES.length;
   status.directExceptions=EXCEPTIONS.length;

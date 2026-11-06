@@ -6,7 +6,7 @@ import {createAuthenticator} from './auth.mjs';
 import {createAccessVerifier} from './access.mjs';
 import {createEgress} from './egress.mjs';
 import {createGithubCanaryVerifier} from './githubCanary.mjs';
-import {publicCatalog} from './policy.mjs';
+import {publicCatalog,publicClients,SIGNING_CONTRACT} from './policy.mjs';
 import {renderConsole} from './ui.mjs';
 
 const SECURITY_HEADERS=Object.freeze({
@@ -62,20 +62,23 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       productionReady:false,cutoverEnabled:false});
    if(req.method==='GET'&&path==='/api/status')
     return reply(res,200,{service:'federation-firewall-gateway',stage:'shadow-hold',
-      configuredClients:auth.configured,canaryEgressEnabled:egress.liveEnabled,
+      configuredClients:auth.configured,configuredClientIds:[...auth.configuredIds()].sort(),
+      registeredApps:publicClients().appCount,canaryEgressEnabled:egress.liveEnabled,
       productionReady:false,cutoverEnabled:false,legacyConnectionsPreserved:true});
    if(req.method==='GET'&&path==='/api/catalog')
     return reply(res,200,publicCatalog());
+   if(req.method==='GET'&&path==='/api/clients')
+    return reply(res,200,{...publicClients(auth.configuredIds()),signing:SIGNING_CONTRACT});
    if(req.method==='GET'&&(path==='/'||path==='/console')){
     const nonce=randomBytes(18).toString('base64url');
-    return page(res,200,renderConsole({nonce,canaryEnabled:egress.liveEnabled}),nonce);
+    return page(res,200,renderConsole({nonce,canaryEnabled:egress.liveEnabled,configuredIds:auth.configuredIds()}),nonce);
    }
    if(req.method==='GET'&&path==='/admin'){
     const assertion=req.headers['cf-access-jwt-assertion'];
     const verified=await access.verify(assertion);
     if(!verified.ok)return reply(res,verified.status,{ok:false,reason:verified.reason});
     const nonce=randomBytes(18).toString('base64url');
-    return page(res,200,renderConsole({nonce,protectedView:true,canaryEnabled:egress.liveEnabled}),nonce);
+    return page(res,200,renderConsole({nonce,protectedView:true,canaryEnabled:egress.liveEnabled,configuredIds:auth.configuredIds()}),nonce);
    }
    if(path==='/api/v1/canary/github'){
     // Separate single-purpose identity boundary: OIDC token must be minted by

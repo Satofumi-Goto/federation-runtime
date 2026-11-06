@@ -64,3 +64,12 @@ Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更し
 - 期限を越えたらキャッシュも返さず、処理中の上流から返ったデータも利用者へ渡さない。短期の検証専用であり、利用者向けAPIの永続運用や本番切替には使用しない。
 - HTTP/200や一時的なカナリア通過を、本番WAF・分散レート/nonce・改ざん不能ログ・無期限のサービス認証の完成と誤認しない。
 - 本番の切替件数はゼロで、旧経路を停止せず、環境変数も通常は `FIREWALL_CANARY_EGRESS=false`。このコードの公開だけでカナリアを自動起動しない。
+
+
+## 10アプリ共通のクライアント登録・署名契約（2026-11-06）
+
+- 10アプリ = 署名クライアント9件（`activity`, `seneschal`, `fleet`, `urban`, `service`, `federation`, `simulator`, `remote-monitoring`, `administration`）+ Gateway本体（`firewall-gateway`）。正本は `policy.mjs` の `CLIENT_REGISTRY`。`service-hub` は `service` の別名（鍵の登録名は `service`）。
+- `GET /api/clients`：各クライアントのID・リポジトリ・利用可能ルート・鍵の設定有無（値は出さない）と署名契約。`GET /api/status` に `configuredClientIds`・`registeredApps` を追加。
+- 署名：`POST /api/v1/shadow/probe`、本文は `{"routeId":"<ID>"}` のみ、ヘッダー `x-fw-client` / `x-fw-time`（13桁ミリ秒）/ `x-fw-nonce`（UUIDv4）/ `x-fw-signature`。署名対象は `federation-firewall-hmac/1`、client、`POST`、パス、time、nonce、本文SHA-256(hex) を改行で連結し、HMAC-SHA256(hex)。時刻差60秒以内、nonce再利用は409。Origin・Cookie・Authorizationを付けた要求は403（サーバー間専用）。
+- 鍵の登録：各アプリのサーバー側秘密 `FIREWALL_<APP>_HMAC_KEY`（32バイト乱数のbase64url、43文字）と、Render の `FIREWALL_CLIENT_KEYS_JSON` の同じIDの値を、管理画面の秘密設定だけで一致させる。PR・チャット・ログに値を書かない。
+- ルートは `ROUTES[*].consumers` だけで決まる。登録しても外部通信は開かない（egressは期限付きカナリアの3条件のみ）。non-200はすべて旧経路を継続する。

@@ -12,7 +12,8 @@ const response=(data,status=200,html=false)=>new Response(html?data:JSON.stringi
  status,headers:{...HEADERS,'Content-Type':html?'text/html; charset=utf-8':'application/json; charset=utf-8',
   ...(html?{'Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"}:{})}
 });
-function mock({egress=false,adminStatus=503}={}){
+const clients=['activity','seneschal','fleet','urban','service','federation','simulator','remote-monitoring','administration'];
+function mock({egress=false,adminStatus=503,registry=false,keys=false,leak=false}={}){
  const calls=[];
  const fetchImpl=async(url,init)=>{
   assert.ok(url.startsWith(ORIGIN+'/'),'outbound source must be the Gateway only');
@@ -21,7 +22,10 @@ function mock({egress=false,adminStatus=503}={}){
   const path=new URL(url).pathname;
   calls.push(init.method+' '+path);
   if(path==='/healthz')return response({service:'federation-firewall-gateway',stage:'shadow-hold',productionReady:false,cutoverEnabled:false});
-  if(path==='/api/status')return response({configuredClients:false,canaryEgressEnabled:egress,productionReady:false,cutoverEnabled:false,legacyConnectionsPreserved:true});
+  if(path==='/api/clients')return registry?response({appCount:10,signing:{version:'federation-firewall-hmac/1'},
+   clients:clients.map(id=>({id,keyConfigured:keys&&id==='activity',gatewayEgressActive:false,...(leak?{key:'A'.repeat(43)}:{})}))})
+   :response({ok:false,reason:'not-found'},404);
+  if(path==='/api/status')return response({configuredClients:keys,...(registry?{configuredClientIds:keys?['activity']:[]}:{}),canaryEgressEnabled:egress,productionReady:false,cutoverEnabled:false,legacyConnectionsPreserved:true});
   if(path==='/api/catalog')return response({policy:{version:'federation-firewall-policy/1',mode:'shadow-hold',defaultCutoverEnabled:false,defaultEgressEnabled:false,paidProviderCallsAllowed:false},
    routes:routes.map(id=>({id,phase:'shadow-hold',switched:false,liveVerified:false})),
    directExceptions:exceptions.map(id=>({id}))});
@@ -31,7 +35,8 @@ function mock({egress=false,adminStatus=503}={}){
   if(path==='/api/v1/shadow/probe'&&init.method==='POST'){
    assert.equal(init.headers.Authorization,undefined);
    assert.deepEqual(JSON.parse(init.body),{routeId:'japan-holidays'});
-   return response({ok:false,reason:'service-auth-unconfigured'},503);
+   return keys?response({ok:false,reason:'signature-required'},401)
+    :response({ok:false,reason:'service-auth-unconfigured'},503);
   }
   throw Error('unapproved target '+path);
  };
@@ -43,11 +48,19 @@ test('Phase 0 verifies real safe interface without sending provider requests',as
  assert.equal(r.ok,true);
  assert.equal(r.routes,3);assert.equal(r.directExceptions,6);
  assert.equal(r.upstreamRequests,0);
- assert.equal(calls.length,7);
+ assert.equal(calls.length,8);
+ assert.equal(r.clientRegistry,'pending-manual-render-deploy');
  assert.deepEqual(calls.filter(x=>x.endsWith('/api/v1/shadow/probe')),[
   'GET /api/v1/shadow/probe','POST /api/v1/shadow/probe']);
 });
 test('Verifier fails closed if live egress or admin access unexpectedly enabled',async()=>{
  await assert.rejects(()=>verifyFirewallPhase0(mock({egress:true}).fetchImpl),/canaryEgressEnabled/);
  await assert.rejects(()=>verifyFirewallPhase0(mock({adminStatus:200}).fetchImpl),/GET \/admin/);
+});
+
+test('Verifier checks the ten-app registry once deployed and never accepts published key material',async()=>{
+ const r=await verifyFirewallPhase0(mock({registry:true,keys:true}).fetchImpl);
+ assert.equal(r.clientRegistry,'deployed');
+ assert.deepEqual(r.configuredClientIds,['activity']);
+ await assert.rejects(()=>verifyFirewallPhase0(mock({registry:true,keys:true,leak:true}).fetchImpl),/key material/);
 });
