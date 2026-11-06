@@ -1,7 +1,8 @@
 import http from 'node:http';
 import {randomBytes} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
-import {resolve} from 'node:path';
+import {resolve,dirname,join} from 'node:path';
+import {readFileSync} from 'node:fs';
 import {createAuthenticator} from './auth.mjs';
 import {createAccessVerifier} from './access.mjs';
 import {createEgress} from './egress.mjs';
@@ -40,12 +41,52 @@ async function limitedBody(req,max=512){
  }
  return Buffer.concat(chunks,size).toString('utf8');
 }
+export const GATEWAY_ORIGIN='https://federation-firewall-gateway.onrender.com';
+export const PARENT_ORIGIN='https://federation-runtime.com';
+export const DISTRIBUTION_REPOSITORY='Satofumi-Goto/federation-runtime';
+export const CANONICAL_REPOSITORY='Satofumi-Goto/federation-portal';
+const SHA40=/^[a-f0-9]{40}$/;
+// Served SHA comes only from the platform-provided RENDER_GIT_COMMIT (never a
+// request value). The canonical commit is read from the distribution-only
+// source-attestation.json when present; absent files leave it null.
+function readCanonicalCommit(){
+ try{
+  const manifest=JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)),'source-attestation.json'),'utf8'));
+  return manifest?.canonicalRepository===CANONICAL_REPOSITORY&&SHA40.test(manifest?.canonicalCommit||'')?manifest.canonicalCommit:null;
+ }catch{return null;}
+}
+export function gitHead(env=process.env,canonicalCommit=readCanonicalCommit()){
+ const raw=String(env.RENDER_GIT_COMMIT||'').trim().toLowerCase();
+ const sha=SHA40.test(raw)?raw:null;
+ return {sha,repository:DISTRIBUTION_REPOSITORY,branch:sha&&env.RENDER_GIT_BRANCH==='main'?'main':null,
+  sourceState:sha?'render-git-commit':'unverified-no-platform-sha',
+  canonicalRepository:CANONICAL_REPOSITORY,canonicalCommit:canonicalCommit||null,
+  canonicalVerification:canonicalCommit?'source-attestation-17-file-git-blob':'not-available'};
+}
+export function parentStatus(origin){
+ return {schema:'federation.runtime-child/1',service:'federation-firewall-gateway',
+  parentOrigin:PARENT_ORIGIN,origin,parentVerified:false};
+}
+// Only facts with evidence are true. Zero-dependency Node service with no
+// Base44 SDK/backend: backendIndependent. No durable store, no app-UI signed
+// E2E, no custom DNS: all false. productionReady stays false (shadow-hold).
+export function readinessStatus(){
+ return {schema:'federation.firewall-independent-readiness/1',service:'federation-firewall-gateway',
+  stage:'shadow-hold',productionReady:false,backendIndependent:true,storageIndependent:false,
+  authenticatedE2E:false,dnsVerified:false,cutoverEnabled:false,verifiedCutovers:0,
+  evidence:{backendIndependent:'node-only server, no Base44 SDK or backend; served from its own Render origin'},
+  pending:{storageIndependent:'no durable store: replay/rate/audit are per-process memory and stdout',
+   authenticatedE2E:'no user-facing signed app-to-gateway E2E; GitHub OIDC and Activity HMAC canaries are diagnostic only',
+   dnsVerified:'onrender.com subdomain only; no custom domain or DNS verification',
+   productionReady:'shadow-hold; network WAF, distributed replay/rate limits and immutable audit not deployed'}};
+}
 export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.now,auditSink=console.info}={}){
  const auth=createAuthenticator({env,clock});
  const access=createAccessVerifier({env,fetchImpl,clock});
  const egress=createEgress({env,fetchImpl,clock});
  const githubCanary=createGithubCanaryVerifier({env,fetchImpl,clock});
  const assistant=createAssistant({env,fetchImpl,clock});
+ const head=gitHead(env);
  const server=http.createServer({maxHeaderSize:8192},async(req,res)=>{
   const path=(req.url||'').split('?')[0];
   // Probe audit is metadata only. Never log request bodies, client secrets,
@@ -68,8 +109,14 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
   if(!req.url||req.url.length>1024)return reply(res,414,{ok:false,reason:'invalid-target'});
   try{
    if(req.method==='GET'&&path==='/healthz')
-    return reply(res,200,{service:'federation-firewall-gateway',stage:'shadow-hold',
+    return reply(res,200,{ok:true,service:'federation-firewall-gateway',stage:'shadow-hold',
       productionReady:false,cutoverEnabled:false});
+   if(req.method==='GET'&&path==='/git-head.json')
+    return reply(res,200,head);
+   if(req.method==='GET'&&path==='/_status/parent')
+    return reply(res,200,parentStatus(GATEWAY_ORIGIN));
+   if(req.method==='GET'&&path==='/_status/readiness')
+    return reply(res,200,readinessStatus());
    if(req.method==='GET'&&path==='/api/status')
     return reply(res,200,{service:'federation-firewall-gateway',stage:'shadow-hold',
       configuredClients:auth.configured,configuredClientIds:[...auth.configuredIds()].sort(),

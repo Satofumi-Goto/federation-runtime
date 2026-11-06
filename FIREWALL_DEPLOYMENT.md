@@ -66,3 +66,12 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 - `POST /api/v1/assistant/ask` requires `federation-firewall-hmac/1` signed server-to-server calls from a registered client and rejects Origin, Cookie and Authorization headers. Body: `{"characterId","question","locale"?,"persona"?,"screen"?}` up to 4096 bytes.
 - Provider calls stay **OFF** unless both `FIREWALL_ASSISTANT_ENABLED=true` and `FIREWALL_ASSISTANT_GEMINI_KEY` are set on Render; otherwise 503 `assistant-disabled`. Keep both unset until the owner explicitly arms them. The provider key is never returned or logged.
 - Audit records only type, time, method, status, client and characterId. `/api/status` reports `assistantEnabled:false` by default. This is not a production cutover or WAF.
+
+## Independent-origin status endpoints (2026-11-06)
+
+- Canonical source: `Satofumi-Goto/federation-portal@de3ccd54e9eeb761feba755ac37a5a3537236546` (PR #1016). All 19 attested files mirrored as exact Git blobs (`server.mjs`, `README.md`, `test/server.test.mjs` changed).
+- `GET /git-head.json`: served SHA from Render's `RENDER_GIT_COMMIT` only (`sha:null` when absent), `repository:Satofumi-Goto/federation-runtime`, and the canonical commit from `source-attestation.json`.
+- `GET /_status/parent`: `federation.runtime-child/1`, `parentOrigin:https://federation-runtime.com`, `origin:https://federation-firewall-gateway.onrender.com`, `parentVerified:false`.
+- `GET /_status/readiness`: `backendIndependent:true`; `storageIndependent`, `authenticatedE2E`, `dnsVerified`, `productionReady` all `false`; `verifiedCutovers:0`.
+- `/healthz` adds `ok:true`. `/`, `/api/status`, `/api/catalog`, `/api/clients` unchanged. No env, secret, DNS, egress or cutover change. Live QA accepts the pre-deploy state (`/git-head.json` 404) or the deployed endpoints, and fails if readiness claims any unproven flag.
+- Render (`federation-firewall-gateway`, auto-deploy OFF) must be manually deployed to this commit before these endpoints are live.

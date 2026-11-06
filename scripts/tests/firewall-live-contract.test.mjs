@@ -13,7 +13,7 @@ const response=(data,status=200,html=false)=>new Response(html?data:JSON.stringi
   ...(html?{'Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"}:{})}
 });
 const clients=['activity','seneschal','fleet','urban','service','federation','simulator','remote-monitoring','administration'];
-function mock({egress=false,adminStatus=503,registry=false,keys=false,leak=false}={}){
+function mock({egress=false,adminStatus=503,registry=false,keys=false,leak=false,status=false,ready={}}={}){
  const calls=[];
  const fetchImpl=async(url,init)=>{
   assert.ok(url.startsWith(ORIGIN+'/'),'outbound source must be the Gateway only');
@@ -25,6 +25,9 @@ function mock({egress=false,adminStatus=503,registry=false,keys=false,leak=false
   if(path==='/api/clients')return registry?response({appCount:10,signing:{version:'federation-firewall-hmac/1'},
    clients:clients.map(id=>({id,keyConfigured:keys&&id==='activity',gatewayEgressActive:false,...(leak?{key:'A'.repeat(43)}:{})}))})
    :response({ok:false,reason:'not-found'},404);
+  if(path==='/git-head.json')return status?response({sha:'a'.repeat(40),repository:'Satofumi-Goto/federation-runtime'}):response({ok:false,reason:'not-found'},404);
+  if(path==='/_status/parent')return response({schema:'federation.runtime-child/1',service:'federation-firewall-gateway',parentOrigin:'https://federation-runtime.com',origin:ORIGIN,parentVerified:false});
+  if(path==='/_status/readiness')return response({productionReady:false,backendIndependent:true,storageIndependent:false,authenticatedE2E:false,dnsVerified:false,cutoverEnabled:false,verifiedCutovers:0,...ready});
   if(path==='/api/status')return response({configuredClients:keys,...(registry?{configuredClientIds:keys?['activity']:[]}:{}),canaryEgressEnabled:egress,productionReady:false,cutoverEnabled:false,legacyConnectionsPreserved:true});
   if(path==='/api/catalog')return response({policy:{version:'federation-firewall-policy/1',mode:'shadow-hold',defaultCutoverEnabled:false,defaultEgressEnabled:false,paidProviderCallsAllowed:false},
    routes:routes.map(id=>({id,phase:'shadow-hold',switched:false,liveVerified:false})),
@@ -48,7 +51,8 @@ test('Phase 0 verifies real safe interface without sending provider requests',as
  assert.equal(r.ok,true);
  assert.equal(r.routes,3);assert.equal(r.directExceptions,6);
  assert.equal(r.upstreamRequests,0);
- assert.equal(calls.length,8);
+ assert.equal(calls.length,9);
+ assert.equal(r.independentStatus,'pending-manual-render-deploy');
  assert.equal(r.clientRegistry,'pending-manual-render-deploy');
  assert.deepEqual(calls.filter(x=>x.endsWith('/api/v1/shadow/probe')),[
   'GET /api/v1/shadow/probe','POST /api/v1/shadow/probe']);
@@ -63,4 +67,10 @@ test('Verifier checks the ten-app registry once deployed and never accepts publi
  assert.equal(r.clientRegistry,'deployed');
  assert.deepEqual(r.configuredClientIds,['activity']);
  await assert.rejects(()=>verifyFirewallPhase0(mock({registry:true,keys:true,leak:true}).fetchImpl),/key material/);
+});
+test('Verifier checks deployed independent status endpoints and refuses inflated readiness',async()=>{
+ const r=await verifyFirewallPhase0(mock({status:true}).fetchImpl);
+ assert.equal(r.independentStatus,'deployed');assert.equal(r.servedSha,'a'.repeat(40));
+ await assert.rejects(()=>verifyFirewallPhase0(mock({status:true,ready:{productionReady:true}}).fetchImpl),/productionReady/);
+ await assert.rejects(()=>verifyFirewallPhase0(mock({status:true,ready:{dnsVerified:true}}).fetchImpl),/dnsVerified/);
 });

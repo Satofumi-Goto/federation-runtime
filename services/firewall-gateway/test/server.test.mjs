@@ -41,3 +41,45 @@ test('client registry endpoint reports key presence only, never key values',asyn
   assert.ok(!ui.includes(value));
  }finally{await new Promise(resolve=>app.server.close(resolve));}
 });
+test('independent origin status endpoints report served SHA, parent and honest readiness',async()=>{
+ const sha='0123456789abcdef0123456789abcdef01234567';
+ const app=createGatewayServer({env:{RENDER_GIT_COMMIT:sha,RENDER_GIT_BRANCH:'main'}});
+ await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
+ const root='http://127.0.0.1:'+app.server.address().port;
+ try{
+  const health=await fetch(root+'/healthz');
+  assert.equal(health.status,200);
+  const h=await health.json();
+  assert.equal(h.ok,true);assert.equal(h.productionReady,false);assert.equal(h.cutoverEnabled,false);
+  const headRes=await fetch(root+'/git-head.json');
+  assert.equal(headRes.status,200);
+  assert.equal(headRes.headers.get('cache-control'),'no-store');
+  assert.equal(headRes.headers.get('access-control-allow-origin'),null);
+  const head=await headRes.json();
+  assert.equal(head.sha,sha);assert.equal(head.repository,'Satofumi-Goto/federation-runtime');
+  assert.equal(head.sourceState,'render-git-commit');assert.equal(head.branch,'main');
+  assert.equal(head.canonicalRepository,'Satofumi-Goto/federation-portal');
+  const parent=await (await fetch(root+'/_status/parent')).json();
+  assert.deepEqual(parent,{schema:'federation.runtime-child/1',service:'federation-firewall-gateway',
+   parentOrigin:'https://federation-runtime.com',origin:'https://federation-firewall-gateway.onrender.com',parentVerified:false});
+  const ready=await (await fetch(root+'/_status/readiness')).json();
+  assert.equal(ready.productionReady,false);assert.equal(ready.backendIndependent,true);
+  assert.equal(ready.storageIndependent,false);assert.equal(ready.authenticatedE2E,false);
+  assert.equal(ready.dnsVerified,false);assert.equal(ready.cutoverEnabled,false);assert.equal(ready.verifiedCutovers,0);
+  for(const key of ['storageIndependent','authenticatedE2E','dnsVerified','productionReady'])assert.ok(ready.pending[key]);
+  for(const p of ['/','/api/status','/api/catalog'])assert.equal((await fetch(root+p)).status,200);
+  assert.equal((await fetch(root+'/git-head.json',{method:'POST'})).status,404);
+ }finally{await new Promise(resolve=>app.server.close(resolve));}
+});
+test('git-head.json never invents a SHA when the platform value is missing or malformed',async()=>{
+ const {gitHead}=await import('../server.mjs');
+ for(const env of [{},{RENDER_GIT_COMMIT:'abc'},{RENDER_GIT_COMMIT:'Z'.repeat(40)},{RENDER_GIT_COMMIT:'<script>'}]){
+  const head=gitHead(env,null);
+  assert.equal(head.sha,null);assert.equal(head.branch,null);
+  assert.equal(head.sourceState,'unverified-no-platform-sha');
+  assert.equal(head.canonicalCommit,null);assert.equal(head.canonicalVerification,'not-available');
+ }
+ const pinned=gitHead({RENDER_GIT_COMMIT:'A'.repeat(40),RENDER_GIT_BRANCH:'feature'},'b'.repeat(40));
+ assert.equal(pinned.sha,'a'.repeat(40));assert.equal(pinned.branch,null);
+ assert.equal(pinned.canonicalCommit,'b'.repeat(40));
+});

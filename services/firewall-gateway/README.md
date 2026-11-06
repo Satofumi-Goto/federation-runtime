@@ -81,3 +81,11 @@ Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更し
 - `FIREWALL_ASSISTANT_ENABLED=true` と `FIREWALL_ASSISTANT_GEMINI_KEY` の**両方**が設定された場合だけ回答。どちらか欠ければ503 `assistant-disabled`。`FIREWALL_ASSISTANT_MODEL` 未設定時は `gemini-2.5-flash`。プロバイダ鍵はサーバー内だけで使い、応答・ログ・ブラウザへ出さない。
 - 12件/ワーカー/分、6件/クライアント/分、同時2件。超過は429、プロバイダ失敗は502。空の成功は返さない。
 - 監査は type・時刻・method・status・client・characterId のみ。質問文・口調指示・回答・署名は記録しない。
+
+## 独立オリジンの状態エンドポイント（2026-11-06）
+
+- `GET /healthz` — `ok:true`、`stage:shadow-hold`、`productionReady:false`、`cutoverEnabled:false`
+- `GET /git-head.json` — 配信中SHA。Renderが付与する `RENDER_GIT_COMMIT`（40桁）だけを使い、無い・不正なら `sha:null`／`sourceState:unverified-no-platform-sha`。配布リポジトリ `Satofumi-Goto/federation-runtime` と、配布側 `source-attestation.json` の正本コミット（無ければ `null`）
+- `GET /_status/parent` — schema `federation.runtime-child/1`、`parentOrigin:https://federation-runtime.com`、`origin:https://federation-firewall-gateway.onrender.com`、`parentVerified:false`
+- `GET /_status/readiness` — `backendIndependent:true`（Node標準のみ、Base44 SDK・バックエンドなし）、`storageIndependent:false`、`authenticatedE2E:false`、`dnsVerified:false`、`productionReady:false`、`verifiedCutovers:0`。false の項目は `pending` に未達理由
+- 既存の `/`、`/api/status`、`/api/catalog`、`/api/clients` は変更なし

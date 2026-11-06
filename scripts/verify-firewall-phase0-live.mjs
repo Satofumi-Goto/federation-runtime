@@ -91,6 +91,30 @@ export async function verifyFirewallPhase0(fetchImpl=fetch){
     assert.equal(registry.response.status,404,'unexpected /api/clients status');
     status.clientRegistry='pending-manual-render-deploy';
   }
+  // Independent-origin status endpoints (served after the manual Render deploy of that release).
+  const head=await request(fetchImpl,'/git-head.json');
+  if(head.response.status===200){
+    securityHeaders(head.response);
+    for(const path of ['/_status/parent','/_status/readiness'])status.checks.push({method:'GET',path,http:200});
+    status.checks.push({method:'GET',path:'/git-head.json',http:200});
+    assert.ok(head.data.sha===null||/^[a-f0-9]{40}$/.test(head.data.sha),'invalid served sha');
+    assert.equal(head.data.repository,'Satofumi-Goto/federation-runtime');
+    const parent=(await request(fetchImpl,'/_status/parent'));
+    assert.equal(parent.response.status,200);securityHeaders(parent.response);
+    assert.equal(parent.data.schema,'federation.runtime-child/1');
+    assert.equal(parent.data.parentOrigin,'https://federation-runtime.com');
+    assert.equal(parent.data.origin,ORIGIN);
+    const ready=(await request(fetchImpl,'/_status/readiness'));
+    assert.equal(ready.response.status,200);securityHeaders(ready.response);
+    for(const key of ['productionReady','storageIndependent','authenticatedE2E','dnsVerified','cutoverEnabled'])
+      assert.equal(ready.data[key],false,'must not claim '+key);
+    assert.equal(ready.data.verifiedCutovers,0);
+    status.independentStatus='deployed';
+    status.servedSha=head.data.sha;
+  }else{
+    assert.equal(head.response.status,404,'unexpected /git-head.json status');
+    status.independentStatus='pending-manual-render-deploy';
+  }
   status.ok=true;
   status.routes=ROUTES.length;
   status.directExceptions=EXCEPTIONS.length;
