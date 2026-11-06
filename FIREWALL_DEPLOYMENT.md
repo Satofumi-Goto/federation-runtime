@@ -88,3 +88,8 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 - Status responses follow the 10-app unified contract; `GET /healthz` with `Accept: text/plain` returns `ok`.
 - The `service-hub` alias is removed: the only client id for the service hub console is `service` (`FIREWALL_CLIENT_KEYS_JSON.service`, `ASSISTANT_GATEWAY_CLIENT=service`). `/api/clients` no longer publishes `aliases`.
 - No route, egress, canary, assistant arming or cutover change. Render (`srv-dbm40fp42hec73djn4cg`, auto-deploy OFF) must be manually deployed to the merge commit of this distribution PR.
+
+## Caller host selection for the shared backend (2026-11-06)
+
+- Canonical reviewed commit: `57ffd744896e109fd4fe4d9e1fc2e79604a1a16b` (federation-portal PR #1080). All **29** files under `services/firewall-gateway/` are mirrored as exact Git blobs (new: `callers.mjs`, `test/callers.test.mjs`); the supporting `config/firewall-gateway-migration.json` blob is unchanged.
+- `callers.mjs` lists 10 caller flows (Activity shadow compare + 9 apps' assistantAsk) and selects their host by `FIREWALL_CALLER_UPSTREAM` (`base44` default, `independent` = `https://federation-api-standalone-staging.onrender.com`). It is a library for callers; the gateway server, routes, egress and canary gates are unchanged. `roundTripVerified:false`, `cutover:false`.
