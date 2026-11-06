@@ -11,6 +11,7 @@ import {createAssistant,parseAssistantCommand,ASSISTANT_PATH,ASSISTANT_MAX_BODY,
 import {publicCatalog,publicClients,SIGNING_CONTRACT} from './policy.mjs';
 import {renderConsole} from './ui.mjs';
 import {independentApps,INDEPENDENT_ORIGINS} from './origins.mjs';
+import {storeFromEnv,createSharedGuards} from './store.mjs';
 
 const SECURITY_HEADERS=Object.freeze({
  'Cache-Control':'no-store',
@@ -89,6 +90,29 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  const access=createAccessVerifier({env,fetchImpl,clock});
  const egress=createEgress({env,fetchImpl,clock});
  const githubCanary=createGithubCanaryVerifier({env,fetchImpl,clock});
+ // Strict opt-in: signed requests must claim a distributed nonce and budget
+ // BEFORE any upstream or assistant invocation. Storage failure denies.
+ const storeMode=env.FIREWALL_STORE||'memory';
+ const requireShared=env.FIREWALL_REQUIRE_DISTRIBUTED_STORE==='true'||storeMode==='redis-rest';
+ const resolved=storeFromEnv(env,{fetchImpl,clock});
+ const sharedStore=resolved.store?.distributed?resolved.store:null;
+ const sharedGuards=sharedStore?createSharedGuards(sharedStore):null;
+ async function enforceShared(client,nonce,kind){
+  if(!requireShared)return {ok:true};
+  if(!sharedGuards||!sharedStore)return {ok:false,status:503,reason:'security-store-unavailable'};
+  const replay=await sharedGuards.replay(client,nonce);
+  if(!replay.ok)return replay;
+  const budget=await sharedGuards.budget(client,clock());
+  if(!budget.ok)return budget;
+  try{
+   const audit=await sharedStore.appendAudit({
+     type:'firewall.signed.accepted',at:new Date(clock()).toISOString(),
+     client,kind
+   });
+   if(!audit.ok)return {ok:false,status:503,reason:'security-audit-unavailable'};
+  }catch{return {ok:false,status:503,reason:'security-audit-unavailable'};}
+  return {ok:true};
+ }
  const assistant=createAssistant({env,fetchImpl,clock});
  const signedClients=new Set();
  const head=gitHead(env);
@@ -136,6 +160,8 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       configuredClients:auth.configured,configuredClientIds:[...auth.configuredIds()].sort(),
       registeredApps:publicClients().appCount,canaryEgressEnabled:egress.liveEnabled,
       assistantEnabled:assistant.enabled,
+      sharedSecurity:{mode:storeMode,required:requireShared,
+       configured:!!sharedStore,distributed:!!sharedStore},
       productionReady:false,cutoverEnabled:false,legacyConnectionsPreserved:true,
       independentApps:apps()});
    if(req.method==='GET'&&path==='/api/catalog')
@@ -194,6 +220,8 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     if(!identity.ok)return identity.status===503
       ?deny(503,'ai_unavailable',{reason:identity.reason})
       :deny(identity.status,'origin_not_allowed',{reason:identity.reason});
+    const shared=await enforceShared(identity.client,req.headers['x-fw-nonce'],'assistant');
+    if(!shared.ok)return deny(shared.status,'ai_unavailable',{reason:shared.reason});
     askClient=identity.client;signedClients.add(identity.client);
     const parsed=parseAssistantCommand(body);
     if(!parsed.ok)return deny(parsed.status||400,parsed.error,{requestId:parsed.requestId});
@@ -216,6 +244,9 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     catch{return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});}
     const identity=auth.verify(req,body,path);
     if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
+    const shared=await enforceShared(identity.client,req.headers['x-fw-nonce'],'shadow-probe');
+    if(!shared.ok)return reply(res,shared.status,{ok:false,reason:shared.reason},
+      shared.retryAfterSeconds?{'Retry-After':String(shared.retryAfterSeconds)}:{});
     probeClient=identity.client;signedClients.add(identity.client);
     let command;
     try{command=JSON.parse(body);}
