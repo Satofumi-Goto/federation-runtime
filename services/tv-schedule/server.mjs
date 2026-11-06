@@ -7,24 +7,35 @@ const PROVIDER='https://api.tvmaze.com';
 const MAX_EPISODES=12;
 const TTL=30*60*1000;
 const MAX_BYTES=2*1024*1024;
-const ORIGINS=new Set([
-  'https://seneschal-standalone-staging.onrender.com',
-  'https://seneschal-runtime.com',
-  'https://seneschal.base44.app',
-]);
+// Browser origins allowed for CORS come only from INDEPENDENT_SENESCHAL_ORIGIN
+// (comma-separated exact https origins). Unset means no browser origin is allowed.
+export function allowedOrigins(env=process.env){
+  const raw=typeof env.INDEPENDENT_SENESCHAL_ORIGIN==='string'?env.INDEPENDENT_SENESCHAL_ORIGIN.trim():'';
+  if(!raw)return new Set();
+  const out=new Set();
+  for(const item of raw.split(',').map(x=>x.trim()).filter(Boolean)){
+    let u;try{u=new URL(item);}catch{throw Error('invalid-independent-seneschal-origin');}
+    if(u.protocol!=='https:'||u.origin!==item||/(^|\.)base44\.app$/i.test(u.hostname))
+      throw Error('invalid-independent-seneschal-origin');
+    out.add(u.origin);
+  }
+  if(out.size>8)throw Error('invalid-independent-seneschal-origin');
+  return out;
+}
 const iso=ms=>new Date(ms).toISOString();
 const jstDay=now=>new Date(now+9*3600000).toISOString().slice(0,10);
 const trimmed=(x,n=120)=>typeof x==='string'?x.replace(/<[^>]+>/g,'').trim().slice(0,n):'';
 const httpsUrl=x=>{try{const v=new URL(x);return v.protocol==='https:'&&!v.username&&!v.password?v.href:null;}catch{return null;}};
 const castNames=raw=>Array.isArray(raw)?[...new Set(raw.map(x=>trimmed(x?.person?.name,100)).filter(Boolean))].slice(0,40):[];
-function reply(res,status,body,{origin,cache=false}={}){
+function reply(res,status,body,{origin,origins,cache=false}={}){
   const h={'Content-Type':'application/json; charset=utf-8','X-Content-Type-Options':'nosniff',
     'Referrer-Policy':'no-referrer','Cache-Control':cache?'public, max-age=120':'no-store',
     'Access-Control-Allow-Methods':'GET, OPTIONS','Vary':'Origin'};
-  if(ORIGINS.has(origin))h['Access-Control-Allow-Origin']=origin;
+  if(origins?.has(origin))h['Access-Control-Allow-Origin']=origin;
   res.writeHead(status,h);res.end(JSON.stringify(body));
 }
-export function createTvScheduleService({fetchImpl=fetch,clock=Date.now}={}){
+export function createTvScheduleService({fetchImpl=fetch,clock=Date.now,env=process.env}={}){
+  const origins=allowedOrigins(env);
   let cache=null,ongoing=null,failedUntil=0;
   // Public free-tier bandwidth guard: aggregate fixed window, no IP/address storage.
   let requestMinute=-1,requestsThisMinute=0;
@@ -107,22 +118,22 @@ export function createTvScheduleService({fetchImpl=fetch,clock=Date.now}={}){
     const u=req.url||'';
     const path=u.split('?')[0];
     if(u.length>150||u.includes('?')||u.includes('#')){
-      return reply(res,400,{ok:false,reason:'unsupported-query'},{origin});
+      return reply(res,400,{ok:false,reason:'unsupported-query'},{origin,origins});
     }
     if(req.method==='OPTIONS'&&path==='/api/v1/tv/schedule')
-      return reply(res,204,null,{origin});
-    if(req.method!=='GET')return reply(res,405,{ok:false,reason:'read-only'},{origin});
-    if(path==='/healthz')return reply(res,200,{ok:true,service:'federation-tv-schedule',mode:'read-only'},{origin});
+      return reply(res,204,null,{origin,origins});
+    if(req.method!=='GET')return reply(res,405,{ok:false,reason:'read-only'},{origin,origins});
+    if(path==='/healthz')return reply(res,200,{ok:true,service:'federation-tv-schedule',mode:'read-only'},{origin,origins});
     if(path==='/api/status')return reply(res,200,{service:'federation-tv-schedule',
       schema:'federation.tv-schedule/1',cacheReady:Boolean(cache),maxEpisodes:MAX_EPISODES,
-      upstream:'tvmaze',personalDataCollected:false},{origin});
-    if(path!=='/api/v1/tv/schedule')return reply(res,404,{ok:false,reason:'not-found'},{origin});
+      upstream:'tvmaze',personalDataCollected:false},{origin,origins});
+    if(path!=='/api/v1/tv/schedule')return reply(res,404,{ok:false,reason:'not-found'},{origin,origins});
     const minute=Math.floor(clock()/60000);
     if(minute!==requestMinute){requestMinute=minute;requestsThisMinute=0;}
     if(++requestsThisMinute>30)
-      return reply(res,429,{ok:false,reason:'rate-limited',retryAfterSeconds:60},{origin});
-    try{return reply(res,200,await get(),{origin,cache:true});}
-    catch{return reply(res,503,{ok:false,reason:'upstream-unavailable',sourceId:'tvmaze'},{origin});}
+      return reply(res,429,{ok:false,reason:'rate-limited',retryAfterSeconds:60},{origin,origins});
+    try{return reply(res,200,await get(),{origin,origins,cache:true});}
+    catch{return reply(res,503,{ok:false,reason:'upstream-unavailable',sourceId:'tvmaze'},{origin,origins});}
   });
   server.requestTimeout=30000;
   server.headersTimeout=32000;
@@ -131,7 +142,7 @@ export function createTvScheduleService({fetchImpl=fetch,clock=Date.now}={}){
 export function startServer(env=process.env){
   const port=Number(env.PORT||10000);
   if(!Number.isSafeInteger(port)||port<1||port>65535)throw Error('invalid-port');
-  const app=createTvScheduleService();
+  const app=createTvScheduleService({env});
   app.server.listen(port,'0.0.0.0',()=>console.log('federation-tv-schedule ready'));
   return app;
 }

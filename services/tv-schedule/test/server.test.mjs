@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createTvScheduleService} from '../server.mjs';
+import {createTvScheduleService,allowedOrigins} from '../server.mjs';
+import {readFileSync} from 'node:fs';
 
 const now=Date.parse('2026-11-06T01:00:00Z');
 const start='2026-11-06T03:00:00Z';
@@ -23,7 +24,7 @@ function fakeProvider({failSchedule=false}={}){
   return {fetchImpl,called};
 }
 async function startTestServer(options){
-  const app=createTvScheduleService({...options,clock:()=>now});
+  const app=createTvScheduleService({env:{INDEPENDENT_SENESCHAL_ORIGIN:'https://seneschal-standalone-staging.onrender.com,https://seneschal-runtime.com'},...options,clock:()=>now});
   await new Promise(ok=>app.server.listen(0,'127.0.0.1',ok));
   const url='http://127.0.0.1:'+app.server.address().port;
   return {url,close:()=>new Promise(ok=>app.server.close(ok))};
@@ -91,5 +92,31 @@ test('throttles anonymous traffic without storing identifiers or blocking health
     assert.equal((await limited.json()).reason,'rate-limited');
     assert.equal((await fetch(s.url+'/healthz')).status,200);
     assert.equal(p.called.length,4,'request cap must not cause additional provider traffic');
+  }finally{await s.close();}
+});
+
+test('browser origins come only from INDEPENDENT_SENESCHAL_ORIGIN; unset allows none and base44.app is refused',async()=>{
+  const source=readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
+  assert.equal(/['"]https:\/\/[^'"]*base44\.app/i.test(source),false,'no base44.app origin literal in the server');
+  assert.equal(allowedOrigins({}).size,0);
+  assert.deepEqual([...allowedOrigins({INDEPENDENT_SENESCHAL_ORIGIN:' https://seneschal-runtime.com '})],['https://seneschal-runtime.com']);
+  for(const bad of ['https://seneschal.base44.app','http://seneschal-runtime.com','https://seneschal-runtime.com/','not a url','https://a.example,https://x.base44.app'])
+    assert.throws(()=>allowedOrigins({INDEPENDENT_SENESCHAL_ORIGIN:bad}),/invalid-independent-seneschal-origin/,bad);
+  const p=fakeProvider();
+  const app=createTvScheduleService({env:{},fetchImpl:p.fetchImpl,clock:()=>now});
+  await new Promise(ok=>app.server.listen(0,'127.0.0.1',ok));
+  const url='http://127.0.0.1:'+app.server.address().port;
+  try{
+    for(const origin of ['https://seneschal-runtime.com','https://seneschal.base44.app']){
+      const r=await fetch(url+'/api/v1/tv/schedule',{headers:{Origin:origin}});
+      assert.equal(r.headers.get('access-control-allow-origin'),null,origin);
+    }
+  }finally{await new Promise(ok=>app.server.close(ok));}
+  const s=await startTestServer({fetchImpl:fakeProvider().fetchImpl});
+  try{
+    const r=await fetch(s.url+'/api/v1/tv/schedule',{headers:{Origin:'https://seneschal.base44.app'}});
+    assert.equal(r.headers.get('access-control-allow-origin'),null);
+    const ok=await fetch(s.url+'/api/v1/tv/schedule',{headers:{Origin:'https://seneschal-runtime.com'}});
+    assert.equal(ok.headers.get('access-control-allow-origin'),'https://seneschal-runtime.com');
   }finally{await s.close();}
 });
