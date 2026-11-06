@@ -88,11 +88,12 @@ test('サービス未作成なら作成せず成功で終える', async () => {
   } finally { m.restore(); }
 });
 
-function liveRoutes({headSha = SHA, deployStatus = 'live', health = 200}) {
+function liveRoutes({headSha = SHA, deployStatus = 'live', health = 200, accepted = false, listed = true}) {
   let polls = 0;
   return [
     ['GET', /\/v1\/services\?name=svc-a/, () => [200, [{service: {id: 'srv-1', name: 'svc-a', serviceDetails: {url: 'https://svc-a.onrender.com'}}}]]],
-    ['POST', /\/v1\/services\/srv-1\/deploys$/, () => [201, {id: 'dep-1', status: 'build_in_progress'}]],
+    ['POST', /\/v1\/services\/srv-1\/deploys$/, () => accepted ? [202, null] : [201, {id: 'dep-1', status: 'build_in_progress'}]],
+    ['GET', /\/v1\/services\/srv-1\/deploys\?limit=20$/, () => [200, listed ? [{deploy: {id: 'dep-0', status: 'live', commit: {id: 'c'.repeat(40)}}}, {deploy: {id: 'dep-1', status: 'build_in_progress', commit: {id: SHA}}}] : []]],
     ['GET', /\/v1\/services\/srv-1\/deploys\/dep-1$/, () => [200, {id: 'dep-1', status: ++polls < 2 ? 'build_in_progress' : deployStatus}]],
     ['GET', /svc-a\.onrender\.com\/healthz$/, () => [health, 'ok']],
     ['GET', /svc-a\.onrender\.com\/git-head\.json$/, () => [200, {sha: headSha}]],
@@ -142,5 +143,37 @@ test('render.yaml が無ければ RENDER_SERVICE_NAMES を使う', async () => {
   try {
     assert.equal(await main(envFor(dir, {RENDER_API_KEY: 'k', RENDER_BLUEPRINT: path.join(dir, 'none.yaml'), RENDER_SERVICE_NAMES: 'gw'})), 0);
     assert.equal(m.calls.length, 1);
+  } finally { m.restore(); }
+});
+
+test('配備開始 HTTP 202（本文なし）は対象コミットの配備を一覧から追跡し、/healthz・/git-head.json まで確認して成功', async () => {
+  const dir = setup();
+  const m = mockFetch(liveRoutes({accepted: true}));
+  try {
+    assert.equal(await main(envFor(dir, {RENDER_API_KEY: 'k'})), 0);
+    assert.ok(m.calls.some((c) => /\/deploys\?limit=20$/.test(c.url)));
+    assert.ok(m.calls.some((c) => /\/healthz$/.test(c.url)));
+    assert.ok(m.calls.some((c) => /\/git-head\.json$/.test(c.url)));
+    assert.match(readFileSync(path.join(dir, 'summary.md'), 'utf8'), /live（dep-1）.*成功/);
+  } finally { m.restore(); }
+});
+
+test('配備開始 HTTP 202 で対象コミットの配備が見つからなければ失敗（別コミットの配備を成功扱いしない）', async () => {
+  const dir = setup();
+  const m = mockFetch(liveRoutes({accepted: true, listed: false}));
+  try {
+    assert.equal(await main(envFor(dir, {RENDER_API_KEY: 'k', RENDER_TIMEOUT_MS: '50'})), 1);
+    assert.match(readFileSync(path.join(dir, 'summary.md'), 'utf8'), /対象コミットの配備が見つからない/);
+  } finally { m.restore(); }
+});
+
+test('RENDER_BLUEPRINT に複数指定すると全ファイルのサービス名を配備対象にする', async () => {
+  const dir = setup();
+  writeFileSync(path.join(dir, 'b.yaml'), 'services:\n  - type: web\n    name: svc-b\n  - type: web\n    name: svc-a\n');
+  const m = mockFetch([['GET', /\/v1\/services\?name=svc-[ab]&limit=20$/, () => [200, []]]]);
+  try {
+    const files = [path.join(dir, 'render.yaml'), path.join(dir, 'b.yaml'), path.join(dir, 'none.yaml')].join(' ');
+    assert.equal(await main(envFor(dir, {RENDER_API_KEY: 'k', RENDER_BLUEPRINT: files})), 0);
+    assert.deepEqual(m.calls.map((c) => new URL(c.url).searchParams.get('name')), ['svc-a', 'svc-b']);
   } finally { m.restore(); }
 });
