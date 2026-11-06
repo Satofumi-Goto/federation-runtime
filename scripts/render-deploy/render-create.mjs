@@ -9,26 +9,55 @@ import {API, pickService, classifyDeploy, serviceUrl} from './render-deploy.mjs'
 
 const GW = 'https://federation-firewall-gateway.onrender.com/api/v1/assistant/ask';
 
+const NODE_BUILD = 'npm ci && npm run test:independent && npm run build:independent';
+const NODE_START = 'npm run start:independent';
+const ADMIN = 'https://administration-standalone-staging.onrender.com';
+const base = (name, client, db, extra = {}) => ({
+  NODE_VERSION: '24',
+  APP_RUNTIME: 'independent',
+  INDEPENDENT_HOST: '0.0.0.0',
+  INDEPENDENT_TRUST_PROXY: 'true',
+  INDEPENDENT_DATABASE: db,
+  INDEPENDENT_ORIGIN: `https://${name}.onrender.com`,
+  ASSISTANT_GATEWAY_URL: GW,
+  ASSISTANT_GATEWAY_CLIENT: client,
+  ...extra,
+});
+const spec = (name, repo, client, db, extra, build = NODE_BUILD, start = NODE_START) => ({
+  name, repo: `https://github.com/Satofumi-Goto/${repo}`, buildCommand: build, startCommand: start, envVars: base(name, client, db, extra),
+});
+
 export const SPECS = Object.freeze({
-  seneschal: {
-    name: 'seneschal-independent-staging',
-    repo: 'https://github.com/Satofumi-Goto/seneschal',
-    buildCommand: 'npm ci && npm run test:independent && npm run build:independent',
-    startCommand: 'npm run start:independent',
-    envVars: {
-      NODE_VERSION: '24',
-      APP_RUNTIME: 'independent',
-      INDEPENDENT_HOST: '0.0.0.0',
-      INDEPENDENT_TRUST_PROXY: 'true',
-      INDEPENDENT_DATABASE: '/tmp/seneschal-independent/runtime.sqlite',
-      INDEPENDENT_UPLOAD_DIR: '/tmp/seneschal-independent/uploads',
-      INDEPENDENT_ORIGIN: 'https://seneschal-independent-staging.onrender.com',
-      ASSISTANT_GATEWAY_URL: GW,
-      ASSISTANT_GATEWAY_CLIENT: 'seneschal',
-      INDEPENDENT_ADMINISTRATION_ORIGIN: 'https://administration-standalone-staging.onrender.com',
-      INDEPENDENT_SAMPLE_CALENDAR_DAILY: 'false',
-    },
-  },
+  seneschal: spec('seneschal-independent-staging', 'seneschal', 'seneschal', '/tmp/seneschal-independent/runtime.sqlite', {
+    INDEPENDENT_UPLOAD_DIR: '/tmp/seneschal-independent/uploads',
+    INDEPENDENT_ADMINISTRATION_ORIGIN: ADMIN,
+    INDEPENDENT_SAMPLE_CALENDAR_DAILY: 'false',
+  }),
+  federation: spec('federation-independent', 'federation-portal', 'federation', '/tmp/federation-independent.sqlite', {
+    FEDERATION_RUNTIME: 'independent',
+    INDEPENDENT_ADMINISTRATION_ORIGIN: ADMIN,
+    INDEPENDENT_APP_CREDENTIAL_LINK_ENABLED: 'false',
+  }, "npm ci && node --test 'runtime/independent/*.test.mjs' && npm run build:independent", 'node runtime/independent/server.mjs'),
+  simulator: spec('mobility-lab-independent', 'mobility-business-lab', 'simulator', '/tmp/simulator-independent.sqlite', {
+    INDEPENDENT_REGISTRATION_MODE: 'off',
+  }),
+  fleet: spec('fleet-independent', 'fleet-operations-console', 'fleet', '/tmp/fleet-operations-console-independent.sqlite', {
+    FEDERATION_OPERATIONAL_TARGET: 'independent', REMOTE_CONSOLE_EXCHANGE_ENABLED: 'false', INDEPENDENT_ADMINISTRATION_ORIGIN: ADMIN,
+  }),
+  urban: spec('urban-independent', 'urban-operation-console', 'urban', '/tmp/urban-operation-console-independent.sqlite', {
+    FEDERATION_OPERATIONAL_TARGET: 'independent', REMOTE_CONSOLE_EXCHANGE_ENABLED: 'false', INDEPENDENT_ADMINISTRATION_ORIGIN: ADMIN,
+  }),
+  'service-hub': spec('service-independent', 'service-hub-console', 'service', '/tmp/service-hub-console-independent.sqlite', {
+    FEDERATION_OPERATIONAL_TARGET: 'independent', REMOTE_CONSOLE_EXCHANGE_ENABLED: 'false', INDEPENDENT_ADMINISTRATION_ORIGIN: ADMIN,
+  }),
+  life: spec('activity-independent', 'life-transaction-console', 'activity', '/tmp/life-transaction-console-independent.sqlite', {
+    FEDERATION_OPERATIONAL_TARGET: 'independent', INDEPENDENT_ADMINISTRATION_ORIGIN: ADMIN,
+    FIREWALL_GATEWAY_ORIGIN: 'https://federation-firewall-gateway.onrender.com',
+  }),
+  'remote-monitoring': spec('remote-monitoring-standalone-staging', 'federation-portal', 'remote-monitoring', '/tmp/remote-monitoring.sqlite', {},
+    "npm ci && node --test 'apps/remote-monitoring/server/*.test.mjs' && node apps/remote-monitoring/server/build.mjs", 'node apps/remote-monitoring/server/server.mjs'),
+  administration: spec('administration-standalone-staging', 'federation-portal', 'administration', '/tmp/administration.sqlite', {},
+    "npm ci && node --test 'apps/administration/server/*.test.mjs' && node apps/administration/server/build.mjs", 'node apps/administration/server/server.mjs'),
 });
 
 export function validateSpec(spec) {
@@ -127,6 +156,20 @@ export async function main(env = process.env) {
   const url = serviceUrl(svc.json) || serviceUrl(service);
   out(`配備状態: ${status}（${deployId}）`);
   out(`公開URL: ${url || '—'}`);
+  if (url && spec.envVars.INDEPENDENT_ORIGIN !== url) {
+    const put = await call(key, 'PUT', `/services/${service.id}/env-vars/INDEPENDENT_ORIGIN`, {value: url});
+    out(`INDEPENDENT_ORIGIN を実URLに合わせる: ${url}（HTTP ${put.status}）`);
+    if (put.status === 200) {
+      const dep = await call(key, 'POST', `/services/${service.id}/deploys`, {clearCache: 'do_not_clear'});
+      out(`再配備（Origin反映）: HTTP ${dep.status}`);
+      const until2 = Date.now() + Number(env.RENDER_TIMEOUT_MS || 25 * 60_000);
+      while (Date.now() < until2) {
+        await sleep(Number(env.RENDER_POLL_MS || 20_000));
+        const s2 = await call(key, 'GET', `/services/${service.id}/deploys/${dep.json && dep.json.id}`);
+        if (s2.json && classifyDeploy(s2.json.status) !== 'pending') { status = s2.json.status; break; }
+      }
+    }
+  }
   if (classifyDeploy(status) !== 'live' || !url) { out('判定: 失敗（Render の Logs を確認）'); return 1; }
   for (const p of ['/healthz', '/git-head.json', '/_status/identity']) {
     let line = '';
