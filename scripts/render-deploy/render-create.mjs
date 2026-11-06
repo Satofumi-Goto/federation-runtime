@@ -105,7 +105,13 @@ export async function main(env = process.env) {
     deployId = created.json.deployId || null;
     out(`作成: ${spec.name}（${service.id}）`);
   } else {
-    out(`既存: ${spec.name}（${service.id}）。作成せず確認のみ`);
+    out(`既存: ${spec.name}（${service.id}）。作成しない`);
+    if (String(env.RENDER_REDEPLOY || '') === 'true') {
+      const dep = await call(key, 'POST', `/services/${service.id}/deploys`, {clearCache: 'do_not_clear'});
+      if ((dep.status !== 201 && dep.status !== 200) || !dep.json || !dep.json.id) { out(`失敗（再配備開始 HTTP ${dep.status}）`); return 1; }
+      out(`再配備を開始: main の最新（${dep.json.id}）`);
+      await sleep(Number(env.RENDER_POLL_MS || 20_000));
+    }
   }
 
   let status = null;
@@ -123,10 +129,14 @@ export async function main(env = process.env) {
   out(`公開URL: ${url || '—'}`);
   if (classifyDeploy(status) !== 'live' || !url) { out('判定: 失敗（Render の Logs を確認）'); return 1; }
   for (const p of ['/healthz', '/git-head.json', '/_status/identity']) {
-    try {
-      const r = await fetch(url + p, {signal: AbortSignal.timeout(30_000)});
-      out(`${p}: HTTP ${r.status} ${(await r.text()).slice(0, 300).replace(/\s+/g, ' ')}`);
-    } catch (e) { out(`${p}: 取得失敗 ${e && e.name}`); }
+    let line = '';
+    for (let i = 0; i < 3 && !line; i++) {
+      try {
+        const r = await fetch(url + p, {signal: AbortSignal.timeout(60_000)});
+        line = `${p}: HTTP ${r.status} ${(await r.text()).slice(0, 300).replace(/\s+/g, ' ')}`;
+      } catch (e) { if (i === 2) line = `${p}: 取得失敗 ${e && e.name}`; }
+    }
+    out(line);
   }
   out('判定: 成功');
   return 0;
