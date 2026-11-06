@@ -43,7 +43,12 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 
 ## Immutable full-source release gate
 
-- `services/firewall-gateway/source-attestation.json` pins **all 15** code, UI, policy, package and unit-test files to their canonical Git Blob SHA from `Satofumi-Goto/federation-portal@edf68a5c7c6fd46e3956f9051165db6b181d40c5`.
+- `services/firewall-gateway/source-attestation.json` pins **all 17** code, UI, policy, package and unit-test files to their canonical Git Blob SHA from `Satofumi-Goto/federation-portal@c8380d701ebf197ed8a9e8c213b4fb533ff3c768`.
 - `node scripts/verify-firewall-source-attestation.mjs` refuses any source-body change, missing file, newly introduced file, path traversal, or altered provenance. CI executes this gate alongside the existing Firewall security regression suite.
-- When a new canonical upstream PR has been reviewed and merged, refresh the 15-file manifest from the **exact approved upstream commit** and mirror the corresponding Git Blobs in the **same reviewed PR**. Never just update expected hashes to make a modified distribution pass.
+- When a new canonical upstream PR has been reviewed and merged, refresh the 17-file manifest from the **exact approved upstream commit** and mirror the corresponding Git Blobs in the **same reviewed PR**. Never just update expected hashes to make a modified distribution pass.
 - This gate does not have access to the private canonical repository at runtime. It verifies the local distribution against the reviewed upstream source pin, and **cannot detect newer unmirrored upstream commits without a fresh cross-repository inspection**.
+
+## 26 Seneschal amenity candidates (2026-11-06)
+
+- Canonical reviewed commit: `c8380d701ebf197ed8a9e8c213b4fb533ff3c768` (federation-portal PR #1004). The 17-file attestation now covers `amenityCandidates.mjs` and `test/amenity-candidates.test.mjs` plus the updated `policy.mjs`.
+- All 26 entries remain read-only catalog metadata. No upstream proxy, price data, HMAC, DNS, provider credential or traffic cutover is enabled. Render staging publication is a separate gated operation.
