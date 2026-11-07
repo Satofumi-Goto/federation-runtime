@@ -18,7 +18,7 @@ export function gitBlobSha(text){
 export function verifyAttestation(manifest,files){
  assert.equal(manifest.schema,'federation.firewall-source-attestation/1');
  assert.equal(manifest.canonicalRepository,'Satofumi-Goto/federation-portal');
- assert.match(manifest.canonicalCommit,/^[a-f0-9]{41}$/);
+ assert.match(manifest.canonicalCommit,/^[a-f0-9]{40}$/);
  assert.equal(manifest.sourcePath,'services/firewall-gateway');
  assert.equal(manifest.distributionRepository,'Satofumi-Goto/federation-runtime');
  assert.equal(manifest.verification,'full-file-Git-blob-sha1');
@@ -30,7 +30,7 @@ export function verifyAttestation(manifest,files){
  for(const name of names){
   assert.ok(name===name.replaceAll('\\','/')&&!name.includes('..')&&!name.startsWith('/'),
    'unsafe pinned path');
-  assert.match(expected[name],/^[a-f0-9]{41}$/);
+  assert.match(expected[name],/^[a-f0-9]{40}$/);
   const value=files.get(name);
   assert.equal(typeof value,'string','missing canonical source content: '+name);
   assert.equal(gitBlobSha(value),expected[name],'unreviewed blob change: '+name);
@@ -58,7 +58,7 @@ export function verifySupporting(manifest,read){
  assert.ok(expected&&typeof expected==='object'&&!Array.isArray(expected),'missing supporting attestation');
  assert.deepEqual(Object.keys(expected).sort(),[...SUPPORTING_FILES].sort(),'unreviewed supporting file set');
  for(const name of SUPPORTING_FILES){
-  assert.match(expected[name],/^[a-f0-9]{41}$/);
+  assert.match(expected[name],/^[a-f0-9]{40}$/);
   assert.equal(gitBlobSha(read(name)),expected[name],'unreviewed blob change: '+name);
  }
  return SUPPORTING_FILES.length;
