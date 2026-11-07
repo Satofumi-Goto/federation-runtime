@@ -152,3 +152,31 @@ test('missing news-only credential refuses all news even if old TV key is config
    assert.equal(calls,0);
  });
 });
+
+test('GDELT uses one approved narrow EV query and respects rate-limited cooldown without retries',async()=>{
+ let calls=0;
+ const provider=async url=>{
+   calls++;
+   assert.match(url,/api\.gdeltproject\.org\/api\/v2\/doc\/doc/);
+   assert.match(url,/electric%20vehicle/);
+   assert.match(url,/maxrecords=6/);
+   assert.match(url,/timespan=12h/);
+   return new Response('Too many requests',{status:429,headers:{'retry-after':'900'}});
+ };
+ await serve(config({FIREWALL_ACTIVITY_SOURCES_ENABLED:'true'}),provider,async root=>{
+   assert.equal((await request(root,'gdelt')).status,503);
+   assert.equal((await request(root,'gdelt')).status,503);
+   assert.equal(calls,1,'no immediate repeat after GDELT rejects the first request');
+ });
+});
+
+test('HTTP 200 GDELT throttle prose is rejected, not cached as a valid feed',async()=>{
+ let calls=0;
+ await serve(config({FIREWALL_ACTIVITY_SOURCES_ENABLED:'true'}),async()=>{
+  calls++;return new Response('Too many requests - wait a few seconds',{status:200});
+ },async root=>{
+  assert.equal((await request(root,'gdelt')).status,503);
+  assert.equal((await request(root,'gdelt')).status,503);
+  assert.equal(calls,1);
+ });
+});
