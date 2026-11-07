@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import {ACQUISITION_LEDGER,publicAcquisitionLedger,validateLedger} from '../acquisitionLedger.mjs';
 import {createGatewayServer} from '../server.mjs';
 
-test('gateway owns the 77-route Seneschal acquisition ledger, one category per route',()=>{
+test('gateway owns the 78-route Seneschal acquisition ledger, one category per route',()=>{
  assert.equal(ACQUISITION_LEDGER.owner,'firewall-gateway');
- assert.equal(ACQUISITION_LEDGER.routes.length,77);
+ assert.equal(ACQUISITION_LEDGER.routes.length,78);
  const s=publicAcquisitionLedger({}).summary;
- assert.deepEqual([s.verified,s.unverified,s.unconnected],[4,40,33]);
+ assert.deepEqual([s.verified,s.unverified,s.unconnected],[4,41,33]);
  assert.throws(()=>validateLedger({...ACQUISITION_LEDGER,routes:[...ACQUISITION_LEDGER.routes,ACQUISITION_LEDGER.routes[0]]}),/duplicate/);
 });
 
@@ -32,7 +32,7 @@ test('GET /api/acquisition-routes allows registered app origins only',async()=>{
   const ok=await fetch(root,{headers:{origin:'https://activity-standalone-staging.onrender.com'}});
   assert.equal(ok.status,200);
   assert.equal(ok.headers.get('access-control-allow-origin'),'https://activity-standalone-staging.onrender.com');
-  assert.equal((await ok.json()).routes.length,77);
+  assert.equal((await ok.json()).routes.length,78);
   const other=await fetch(root,{headers:{origin:'https://evil.example'}});
   assert.equal(other.headers.get('access-control-allow-origin'),null);
  }finally{await new Promise(r=>app.server.close(r));}

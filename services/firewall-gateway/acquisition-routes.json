@@ -47,7 +47,8 @@
         "poiSupplementJapansearch",
         "poiSupplementElevation",
         "poiSupplementGeoapify",
-        "poiSupplementWalking"
+        "poiSupplementWalking",
+        "bodikPublicFacilities"
       ]
     },
     {
@@ -1111,6 +1112,18 @@
       "requiredKeys": [
         "GOOGLE_ENVIRONMENT_API_KEY"
       ]
+    },
+    {
+      "id": "bodikPublicFacilities",
+      "name": "BODIK 自治体の公共設備",
+      "basis": "registered",
+      "primary": "Seneschal searchExternalPoi → BODIK WAPI（geometry）とODM出典・ライセンス照合",
+      "secondary": null,
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "開発環境のトイレ6件・AED6件を確認。本番配備・公開画面は未検証。CC BY/CC0のみ表示",
+      "requiredKeys": []
     }
   ]
 }
