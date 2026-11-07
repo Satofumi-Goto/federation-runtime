@@ -13,6 +13,12 @@ export const ROUTES=Object.freeze({
     consumers:['activity','urban','fleet','seneschal','federation'],
     ttlMs:180000,maxBytes:262144,maxRecords:500,phase:'shadow-hold',
   }),
+  'p2pquake-history':Object.freeze({
+    id:'p2pquake-history',label:'P2P地震情報（直近1件）',owner:'activity',provider:'p2pquake',
+    url:'https://api.p2pquake.net/v2/history?codes=551&limit=1',
+    consumers:['activity','seneschal','urban','federation'],
+    ttlMs:180000,maxBytes:131072,maxRecords:1,phase:'shadow-hold',
+  }),
   'open-meteo-tokyo':Object.freeze({
     id:'open-meteo-tokyo',label:'東京都の公開天気サンプル',owner:'activity',provider:'open-meteo',
     url:'https://api.open-meteo.com/v1/forecast?latitude=35.68&longitude=139.69&current=temperature_2m,wind_speed_10m&forecast_days=1&timezone=Asia%2FTokyo',
