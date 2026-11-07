@@ -100,6 +100,11 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  const sourceAuth=createAuthenticator({env:{
    FIREWALL_CLIENT_KEYS_JSON:sourceKey?JSON.stringify({activity:sourceKey}):''
  },clock});
+ // A separate news-only secret preserves all existing signed TV/event clients.
+ const newsKey=env.FIREWALL_ACTIVITY_NEWS_KEY||'';
+ const newsAuth=createAuthenticator({env:{
+   FIREWALL_CLIENT_KEYS_JSON:newsKey?JSON.stringify({activity:newsKey}):''
+ },clock});
  const access=createAccessVerifier({env,fetchImpl,clock});
  const egress=createEgress({env,fetchImpl,clock});
  const activityAcquisition=createActivityAcquisition({fetchImpl,clock});
@@ -266,15 +271,16 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     let body;
     try{body=await limitedBody(req,64);}
     catch{return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});}
-    const identity=sourceAuth.verify(req,body,path);
-    if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
-    if(identity.client!=='activity')return reply(res,403,{ok:false,reason:'activity-only'});
     let command;
     try{command=JSON.parse(body);}
     catch{return reply(res,400,{ok:false,reason:'invalid-json'});}
     if(!command||typeof command!=='object'||Array.isArray(command)||
       Object.keys(command).length!==1||!['tv','online','gdelt','mlit','events','anilist'].includes(command.source))
       return reply(res,400,{ok:false,reason:'unsupported-command'});
+    const newsSource=command.source==='gdelt'||command.source==='mlit';
+    const identity=(newsSource?newsAuth:sourceAuth).verify(req,body,path);
+    if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
+    if(identity.client!=='activity')return reply(res,403,{ok:false,reason:'activity-only'});
     if(!activitySourcesEnabled)return reply(res,503,{ok:false,reason:'activity-egress-disabled'});
     if(command.source==='events'&&!activityEventsEnabled)
       return reply(res,503,{ok:false,reason:'event-egress-disabled'});
