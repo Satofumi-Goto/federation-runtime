@@ -6,6 +6,7 @@ const HOSTS=Object.freeze({
   redlook:'https://red-look.com/ja/online.html',
 });
 const TV='https://api.tvmaze.com';
+const KAWASAKI='https://eventapp.city.kawasaki.jp/data/api/v1/events';
 // Only two fixed, keyless headline providers. No caller URL, topic or location.
 const NEWS=Object.freeze({
   gdelt:'https://api.gdeltproject.org/api/v2/doc/doc?query='+encodeURIComponent('("autonomous driving" OR "electric vehicle" OR "public transport" OR "artificial intelligence" OR "Japan")')+'&mode=artlist&maxrecords=12&timespan=24h&sort=datedesc&format=json',
@@ -25,7 +26,14 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
          u.hostname==='api.tvmaze.com'&&(
            /^\/schedule$/.test(u.pathname)&&/^country=JP&date=\d{4}-\d{2}-\d{2}$/.test(u.search.slice(1))||
            /^\/(?:episodes|shows)\/[0-9]+\/(?:guestcast|cast)$/.test(u.pathname)&&!u.search
-         )))throw Error('upstream-not-allowed');
+         )||u.origin==='https://eventapp.city.kawasaki.jp'&&
+           u.pathname==='/data/api/v1/events'&&
+           [...u.searchParams.keys()].sort().join(',')==='format,from,page,to'&&
+           u.searchParams.get('format')==='JSON'&&
+           u.searchParams.get('page')==='1'&&
+           /^\d{4}-\d{2}-\d{2}$/.test(u.searchParams.get('from')||'')&&
+           /^\d{4}-\d{2}-\d{2}$/.test(u.searchParams.get('to')||'')
+         ))throw Error('upstream-not-allowed');
     const response=await fetchImpl(u.href,{method:'GET',redirect:'manual',credentials:'omit',
       headers:{Accept:html?'text/html':'application/json'},signal});
     if(!response.ok||response.status>=300&&response.status<400)
@@ -80,8 +88,20 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
     const redlook=responses[2].status==='fulfilled'?String(responses[2].value).slice(0,24000):'';
     return {swiss,fellowship,redlook,providers};
   }
+  async function events(signal){
+    // Server-clock bounded public date window. No caller dates, URL or identity.
+    const from=day(clock()),to=day(clock()+14*24*HOUR);
+    const url=new URL(KAWASAKI);
+    url.search=new URLSearchParams({format:'JSON',page:'1',from,to}).toString();
+    const raw=await read(url.href,signal);
+    if(!Array.isArray(raw?.event_data)||raw.event_data.length>100)
+      throw Error('invalid-kawasaki-events');
+    // Activity handles date/location parsing, provenance and publication.
+    return {kawasaki:{event_data:raw.event_data,from,to},
+      providers:[{id:'kawasaki',state:'ok',count:raw.event_data.length}]};
+  }
   async function get(source){
-    if(!['tv','online','gdelt','mlit'].includes(source))throw Error('invalid-source');
+    if(!['tv','online','gdelt','mlit','events'].includes(source))throw Error('invalid-source');
     const now=clock(),hit=cache.get(source);
     if(hit&&now<hit.until)return {...hit.value,cached:true};
     if(pending.has(source))return pending.get(source);
@@ -91,6 +111,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
       const timer=setTimeout(()=>controller.abort(),18000);
       try{
         const data=source==='tv'?await tv(controller.signal):source==='online'?await online(controller.signal)
+          :source==='events'?await events(controller.signal)
           : {data:await read(NEWS[source],controller.signal,{bytes:true})};
         const value={schema:'gateway.activity-raw/1',source,fetchedAt:new Date(clock()).toISOString(),
           personalDataCollected:false,...data};
