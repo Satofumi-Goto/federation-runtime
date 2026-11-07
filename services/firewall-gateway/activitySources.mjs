@@ -63,6 +63,7 @@ export function validateEventQuery(input,now=Date.now()){
 }
 export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
   const cache=new Map(),pending=new Map(),cooldowns=new Map();
+  let gdeltThrottleStreak=0;
   async function read(url,signal,{html=false,bytes=false,anilist=false,maxBytes=MAX_BYTES}={}){
     const u=new URL(url);
     if(u.protocol!=='https:'||u.username||u.password||
@@ -85,6 +86,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
     if(!response.ok||response.status>=300&&response.status<400){
       const error=new Error('upstream-unavailable');
       if((anilist||u.href===NEWS.gdelt)&&response.status===429){
+        if(u.href===NEWS.gdelt)error.message='gdelt-throttled';
         const retry=response.headers?.get?.('retry-after')||'';
         const ms=/^\d{1,6}$/.test(retry)?Number(retry)*1000:Date.parse(retry)-clock();
         error.cooldownMs=Math.min(24*HOUR,Math.max(HOUR,Number.isFinite(ms)?ms:0));
@@ -99,8 +101,15 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
       // GDELT can return a throttle/usage notice as HTTP 200 text.
       // Reject and back off rather than caching malformed headlines.
       let document;
-      try{document=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(buf));}
-      catch{const error=new Error('invalid-gdelt-json');error.cooldownMs=HOUR;throw error;}
+      const text=new TextDecoder('utf-8',{fatal:true}).decode(buf);
+      try{document=JSON.parse(text);}
+      catch{
+        // GDELT occasionally sends an HTTP 200 text/plain usage notice. Never
+        // cache or publish it as JSON; progressively cool this fixed source.
+        const throttle=/^Please limit requests to one every 5 seconds\b/i.test(text.trimStart());
+        const error=new Error(throttle?'gdelt-throttled':'invalid-gdelt-json');
+        error.cooldownMs=HOUR;throw error;
+      }
       if(!Array.isArray(document?.articles)||document.articles.length>6)
         throw Error('invalid-gdelt-articles');
     }
@@ -198,8 +207,16 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
         const value={schema:'gateway.activity-raw/1',source,fetchedAt:new Date(clock()).toISOString(),
           personalDataCollected:false,...data};
         cache.set(key,{until:clock()+TTL,value});cooldowns.delete(key);
+        if(source==='gdelt')gdeltThrottleStreak=0;
         return value;
-      }catch(e){cooldowns.set(key,clock()+((source==='anilist'||source==='gdelt')&&Number.isFinite(e.cooldownMs)?e.cooldownMs:source==='gdelt'?15*60_000:60_000));throw e;}
+      }catch(e){
+        if(source==='gdelt'&&e.message==='gdelt-throttled'){
+          gdeltThrottleStreak=Math.min(6,gdeltThrottleStreak+1);
+          e.cooldownMs=Math.min(24*HOUR,Math.max(e.cooldownMs||HOUR,HOUR*2**(gdeltThrottleStreak-1)));
+        }
+        cooldowns.set(key,clock()+((source==='anilist'||source==='gdelt')&&Number.isFinite(e.cooldownMs)?e.cooldownMs:source==='gdelt'?15*60_000:60_000));
+        throw e;
+      }
       finally{clearTimeout(timer);}
     })().finally(()=>pending.delete(key));
     pending.set(key,promise);
