@@ -61,7 +61,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
       if(raw?.errors?.length||!Array.isArray(raw?.data?.Page?.media)||raw.data.Page.media.length>6)
         throw Error('invalid-anilist-payload');
     }
-    if(bytes)return {encoding:'base64url',body:Buffer.from(buf).toString('base64url'};
+    if(bytes)return {encoding:'base64url',body:Buffer.from(buf).toString('base64url')};
     const text=new TextDecoder('utf-8',{fatal:true}).decode(buf);
     if(html)return text;
     const data=JSON.parse(text);
