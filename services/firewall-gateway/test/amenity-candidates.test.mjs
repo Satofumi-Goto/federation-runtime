@@ -18,7 +18,7 @@ test('all Seneschal Map selectable facilities have inert Gateway candidates, not
   assert.equal(x.cutoverApproved,false);
   assert.ok(!Object.hasOwn(ROUTES,x.mapLayerId));
  }
- assert.deepEqual(Object.keys(ROUTES).sort(),['japan-holidays','jma-earthquake-list','open-meteo-tokyo']);
+ assert.deepEqual(Object.keys(ROUTES).sort(),['japan-holidays','jma-earthquake-list','open-meteo-tokyo','p2pquake-history']);
  assert.equal(SECURITY_POLICY.anonymousProxyAllowed,false);
  assert.equal(SECURITY_POLICY.defaultCutoverEnabled,false);
  assert.equal(SECURITY_POLICY.legacyRoutesStayEnabled,true);
