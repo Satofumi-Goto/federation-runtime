@@ -44,7 +44,8 @@ test('Gateway event route is independently disabled by default and does not enab
  const src=readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
  assert.match(src,/FIREWALL_ACTIVITY_EVENTS_ENABLED==='true'/);
  assert.match(src,/event-egress-disabled/);
- assert.match(src,/\['tv','online','gdelt','mlit','events','anilist','tokyo_koto_events','tokyo_sumida_events'\]/);
+ assert.match(src,/\['tv','online',\.\.\.NEWS_SOURCE_IDS,'events','anilist','tokyo_koto_events','tokyo_sumida_events'\]/);
+ assert.match(src,/const eventSource=kawasakiSource\|\|\['tokyo_koto_events','tokyo_sumida_events'\]/);
  assert.doesNotMatch(src,/autoCutover=true/);
 });
 
