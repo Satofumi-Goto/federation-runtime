@@ -12,6 +12,9 @@ const NEWS=Object.freeze({
   gdelt:'https://api.gdeltproject.org/api/v2/doc/doc?query='+encodeURIComponent('("autonomous driving" OR "electric vehicle" OR "public transport" OR "artificial intelligence" OR "Japan")')+'&mode=artlist&maxrecords=12&timespan=24h&sort=datedesc&format=json',
   mlit:'https://www.mlit.go.jp/pressrelease.rdf',
 });
+// One fixed, non-personal AniList request. No caller-supplied GraphQL, URL or credentials.
+const ANILIST_URL='https://graphql.anilist.co/';
+const ANILIST_BODY=JSON.stringify({query:'query { Page(page:1,perPage:6) { media(type:ANIME,sort:TRENDING_DESC,isAdult:false) { id title { native romaji } siteUrl format nextAiringEpisode { airingAt episode } } } }'});
 const TTL=30*60_000;
 const MAX_BYTES=350_000;
 const HOUR=3_600_000;
@@ -19,10 +22,11 @@ const day=ms=>new Date(ms+9*HOUR).toISOString().slice(0,10);
 const parseTime=x=>typeof x==='string'?Date.parse(x):NaN;
 export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
   const cache=new Map(),pending=new Map(),cooldowns=new Map();
-  async function read(url,signal,{html=false,bytes=false}={}){
+  async function read(url,signal,{html=false,bytes=false,anilist=false}={}){
     const u=new URL(url);
     if(u.protocol!=='https:'||u.username||u.password||
        !([HOSTS.swiss,HOSTS.fellowship,HOSTS.redlook,...Object.values(NEWS)].includes(u.href)||
+         anilist&&u.href===ANILIST_URL||
          u.hostname==='api.tvmaze.com'&&(
            /^\/schedule$/.test(u.pathname)&&/^country=JP&date=\d{4}-\d{2}-\d{2}$/.test(u.search.slice(1))||
            /^\/(?:episodes|shows)\/[0-9]+\/(?:guestcast|cast)$/.test(u.pathname)&&!u.search
@@ -34,15 +38,30 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
            /^\d{4}-\d{2}-\d{2}$/.test(u.searchParams.get('from')||'')&&
            /^\d{4}-\d{2}-\d{2}$/.test(u.searchParams.get('to')||'')
          ))throw Error('upstream-not-allowed');
-    const response=await fetchImpl(u.href,{method:'GET',redirect:'manual',credentials:'omit',
-      headers:{Accept:html?'text/html':'application/json'},signal});
-    if(!response.ok||response.status>=300&&response.status<400)
-      throw Error('upstream-unavailable');
+    const response=await fetchImpl(u.href,{method:anilist?'POST':'GET',redirect:'manual',credentials:'omit',
+      headers:{Accept:html?'text/html':'application/json',...(anilist?{'Content-Type':'application/json'}:{})},
+      ...(anilist?{body:ANILIST_BODY}:{}),signal});
+    if(!response.ok||response.status>=300&&response.status<400){
+      const error=new Error('upstream-unavailable');
+      if(anilist&&response.status===429){
+        const retry=response.headers?.get?.('retry-after')||'';
+        const ms=/^\d{1,6}$/.test(retry)?Number(retry)*1000:Date.parse(retry)-clock();
+        error.cooldownMs=Math.min(24*HOUR,Math.max(HOUR,Number.isFinite(ms)?ms:0));
+      }
+      throw error;
+    }
     const declared=Number(response.headers?.get?.('content-length'));
     if(Number.isFinite(declared)&&declared>MAX_BYTES)throw Error('upstream-too-large');
     const buf=await response.arrayBuffer();
     if(buf.byteLength>MAX_BYTES)throw Error('upstream-too-large');
-    if(bytes)return {encoding:'base64url',body:Buffer.from(buf).toString('base64url')};
+    if(anilist){
+      let raw;
+      try{raw=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(buf));}
+      catch{throw Error('invalid-anilist-json');}
+      if(raw?.errors?.length||!Array.isArray(raw?.data?.Page?.media)||raw.data.Page.media.length>6)
+        throw Error('invalid-anilist-payload');
+    }
+    if(bytes)return {encoding:'base64url',body:Buffer.from(buf).toString('base64url'};
     const text=new TextDecoder('utf-8',{fatal:true}).decode(buf);
     if(html)return text;
     const data=JSON.parse(text);
@@ -101,7 +120,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
       providers:[{id:'kawasaki',state:'ok',count:raw.event_data.length}]};
   }
   async function get(source){
-    if(!['tv','online','gdelt','mlit','events'].includes(source))throw Error('invalid-source');
+    if(!['tv','online','gdelt','mlit','events','anilist'].includes(source))throw Error('invalid-source');
     const now=clock(),hit=cache.get(source);
     if(hit&&now<hit.until)return {...hit.value,cached:true};
     if(pending.has(source))return pending.get(source);
@@ -112,12 +131,13 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
       try{
         const data=source==='tv'?await tv(controller.signal):source==='online'?await online(controller.signal)
           :source==='events'?await events(controller.signal)
+          :source==='anilist'?{data:await read(ANILIST_URL,controller.signal,{bytes:true,anilist:true})}
           : {data:await read(NEWS[source],controller.signal,{bytes:true})};
         const value={schema:'gateway.activity-raw/1',source,fetchedAt:new Date(clock()).toISOString(),
           personalDataCollected:false,...data};
         cache.set(source,{until:clock()+TTL,value});cooldowns.delete(source);
         return value;
-      }catch(e){cooldowns.set(source,clock()+60_000);throw e;}
+      }catch(e){cooldowns.set(source,clock()+(source==='anilist'&&Number.isFinite(e.cooldownMs)?e.cooldownMs:60_000));throw e;}
       finally{clearTimeout(timer);}
     })().finally(()=>pending.delete(source));
     pending.set(source,promise);
