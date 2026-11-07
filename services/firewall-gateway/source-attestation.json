@@ -44,7 +44,8 @@
     "test/ui-csp.test.mjs": "03ea0b110330ec29e4f11058762ba0b9ff6dc27d",
     "tools/edge-negative-check.mjs": "74b07a7a411633ee04484d7739b39bea746e5042",
     "ui.mjs": "b85fd453aad97a347b6d8d82bfa24b54fb220e90",
-    "test/activity-event-acquisition.test.mjs": "15011ce61500185bfb404e3bf3aa5ee78d25708e"
+    "test/activity-event-acquisition.test.mjs": "15011ce61500185bfb404e3bf3aa5ee78d25708e",
+    "test/activity-anilist-fixed.test.mjs": "3d6ee47fe85eb7ab5b3098360323a3e29c28c3f4"
   },
   "supportingFiles": {
     "config/firewall-gateway-migration.json": "d2decb960e092cdb5b4525fa4463e58a526b0d54"
