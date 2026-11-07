@@ -5,7 +5,8 @@ import {createGatewayServer} from '../server.mjs';
 import {signHeaders} from '../auth.mjs';
 const NOW=Date.parse('2026-11-07T00:00:00.000Z'),PATH='/api/v1/activity/acquire';
 const KEY=randomBytes(32);
-const config=(flags={})=>({FIREWALL_CLIENT_KEYS_JSON:JSON.stringify({activity:KEY.toString('base64url')}),...flags});
+const config=(flags={})=>({FIREWALL_CLIENT_KEYS_JSON:JSON.stringify({activity:KEY.toString('base64url')}),
+ FIREWALL_ACTIVITY_ACQUISITION_KEY:KEY.toString('base64url'),...flags});
 async function serve(env,fetchImpl,fn){
  const app=createGatewayServer({env,clock:()=>NOW,fetchImpl,auditSink:()=>{}});
  await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
@@ -24,6 +25,17 @@ test('off by default; signed activity receives 503 and NO outbound traffic',asyn
   assert.equal((await request(url)).status,503);
   assert.equal(calls,0);
  });
+});
+test('the general client key alone never authorizes Activity source egress',async()=>{
+ let calls=0;
+ const fake=async()=>{calls++;throw Error('not allowed');};
+ await serve({FIREWALL_CLIENT_KEYS_JSON:JSON.stringify({activity:KEY.toString('base64url')}),
+   FIREWALL_ACTIVITY_SOURCES_ENABLED:'true'},fake,async url=>{
+   const result=await request(url,'online');
+   assert.equal(result.status,503);
+   assert.equal(result.data.reason,'service-auth-unconfigured');
+ });
+ assert.equal(calls,0);
 });
 test('the signed endpoint rejects browsers, wrong clients, arbitrary queries and replay',async()=>{
  const provider=async url=>{
