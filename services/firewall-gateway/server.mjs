@@ -6,7 +6,7 @@ import {readFileSync} from 'node:fs';
 import {createAuthenticator} from './auth.mjs';
 import {createAccessVerifier} from './access.mjs';
 import {createEgress} from './egress.mjs';
-import {createActivityAcquisition,validateEventQuery} from './activitySources.mjs';
+import {createActivityAcquisition,validateEventQuery,NEWS_SOURCE_IDS} from './activitySources.mjs';
 import {createGithubCanaryVerifier} from './githubCanary.mjs';
 import {createAssistant,parseAssistantCommand,ASSISTANT_PATH,ASSISTANT_MAX_BODY,ASSISTANT_POLICY} from './assistant.mjs';
 import {publicCatalog,publicClients,SIGNING_CONTRACT} from './policy.mjs';
@@ -292,10 +292,10 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     const eventQuery=kawasakiSource&&keys==='from,page,source,to'
       ?validateEventQuery(command,clock()):null;
     if(!command||typeof command!=='object'||Array.isArray(command)||
-      !['tv','online','gdelt','mlit','events','anilist','tokyo_koto_events','tokyo_sumida_events'].includes(command.source)||
+      !['tv','online',...NEWS_SOURCE_IDS,'events','anilist','tokyo_koto_events','tokyo_sumida_events'].includes(command.source)||
       (kawasakiSource?!eventQuery:keys!=='source'))
       return reply(res,400,{ok:false,reason:'unsupported-command'});
-    const newsSource=command.source==='gdelt'||command.source==='mlit';
+    const newsSource=NEWS_SOURCE_IDS.includes(command.source);
     // The Tokyo-only staging key is an ADDITIONAL, isolated credential, never
     // a replacement or authorization for Kawasaki, TV, news or any user data.
     let identity=(eventSource?eventAuth:newsSource?newsAuth:sourceAuth).verify(req,body,path);
