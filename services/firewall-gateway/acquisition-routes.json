@@ -98,7 +98,9 @@
         "parkingOperators",
         "odptRailBus",
         "gtfsJpOperatorFeeds",
-        "okinawaPublicParking"
+        "okinawaPublicParking",
+        "transitGuidancePublic",
+        "transitRailApproved"
       ]
     },
     {
@@ -1154,6 +1156,30 @@
         "KEYVOX_API_SECRET",
         "KEYVOX_PUBLIC_LOCKERS_JSON"
       ]
+    },
+    {
+      "id": "transitGuidancePublic",
+      "name": "日本の乗換経路・全国駅名検索（公開Transit API）",
+      "basis": "registered",
+      "primary": "Seneschal Map / publicTransit.mjs → 非公式Transit API guidance/plan・plan・locations/suggest（ユーザー検索のみ、取得不確実・事業者の個別再利用許諾未確認）",
+      "secondary": null,
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "外部から東京→新宿の複数候補・駅検索を実GETで確認。正式ブラウザCORS、運行網羅性、商用利用条件、公開版は未確認",
+      "requiredKeys": []
+    },
+    {
+      "id": "transitRailApproved",
+      "name": "N02鉄道駅・鉄道路線（Esri Japan）",
+      "basis": "registered",
+      "primary": "Seneschal Map / publicTransit.mjs → 国土数値情報N02由来 Esri Japan RailwayStationPoint + RailroadSection GeoJSON（範囲指定・明示取得）",
+      "secondary": null,
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "東京周辺の駅Point・線路LineStringを外部で実GET確認。独立運用環境・本番実ブラウザは未確認。公開Overpassの直利用はしない",
+      "requiredKeys": []
     }
   ]
 }
