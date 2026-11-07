@@ -6,6 +6,11 @@ const HOSTS=Object.freeze({
   redlook:'https://red-look.com/ja/online.html',
 });
 const TV='https://api.tvmaze.com';
+// Only two fixed, keyless headline providers. No caller URL, topic or location.
+const NEWS=Object.freeze({
+  gdelt:'https://api.gdeltproject.org/api/v2/doc/doc?query='+encodeURIComponent('("autonomous driving" OR "electric vehicle" OR "public transport" OR "artificial intelligence" OR "Japan")')+'&mode=artlist&maxrecords=12&timespan=24h&sort=datedesc&format=json',
+  mlit:'https://www.mlit.go.jp/pressrelease.rdf',
+});
 const TTL=30*60_000;
 const MAX_BYTES=350_000;
 const HOUR=3_600_000;
@@ -13,10 +18,10 @@ const day=ms=>new Date(ms+9*HOUR).toISOString().slice(0,10);
 const parseTime=x=>typeof x==='string'?Date.parse(x):NaN;
 export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
   const cache=new Map(),pending=new Map(),cooldowns=new Map();
-  async function read(url,signal,{html=false}={}){
+  async function read(url,signal,{html=false,bytes=false}={}){
     const u=new URL(url);
     if(u.protocol!=='https:'||u.username||u.password||
-       !([HOSTS.swiss,HOSTS.fellowship,HOSTS.redlook].includes(u.href)||
+       !([HOSTS.swiss,HOSTS.fellowship,HOSTS.redlook,...Object.values(NEWS)].includes(u.href)||
          u.hostname==='api.tvmaze.com'&&(
            /^\/schedule$/.test(u.pathname)&&/^country=JP&date=\d{4}-\d{2}-\d{2}$/.test(u.search.slice(1))||
            /^\/(?:episodes|shows)\/[0-9]+\/(?:guestcast|cast)$/.test(u.pathname)&&!u.search
@@ -29,6 +34,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
     if(Number.isFinite(declared)&&declared>MAX_BYTES)throw Error('upstream-too-large');
     const buf=await response.arrayBuffer();
     if(buf.byteLength>MAX_BYTES)throw Error('upstream-too-large');
+    if(bytes)return {encoding:'base64url',body:Buffer.from(buf).toString('base64url')};
     const text=new TextDecoder('utf-8',{fatal:true}).decode(buf);
     if(html)return text;
     const data=JSON.parse(text);
@@ -75,7 +81,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
     return {swiss,fellowship,redlook,providers};
   }
   async function get(source){
-    if(!['tv','online'].includes(source))throw Error('invalid-source');
+    if(!['tv','online','gdelt','mlit'].includes(source))throw Error('invalid-source');
     const now=clock(),hit=cache.get(source);
     if(hit&&now<hit.until)return {...hit.value,cached:true};
     if(pending.has(source))return pending.get(source);
@@ -84,7 +90,8 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
       const controller=new AbortController();
       const timer=setTimeout(()=>controller.abort(),18000);
       try{
-        const data=source==='tv'?await tv(controller.signal):await online(controller.signal);
+        const data=source==='tv'?await tv(controller.signal):source==='online'?await online(controller.signal)
+          : {data:await read(NEWS[source],controller.signal,{bytes:true})};
         const value={schema:'gateway.activity-raw/1',source,fetchedAt:new Date(clock()).toISOString(),
           personalDataCollected:false,...data};
         cache.set(source,{until:clock()+TTL,value});cooldowns.delete(source);
