@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createActivityAcquisition,validateEventQuery,projectKawasakiEvent,projectTokyoEventHit,NEWS_SOURCE_IDS} from '../activitySources.mjs';
+import {createActivityAcquisition,validateEventQuery,projectKawasakiEvent,projectTokyoEventHit,NEWS_SOURCE_IDS,TOKYO_EVENT_SOURCE_IDS} from '../activitySources.mjs';
 
 const NOW=Date.parse('2026-11-07T03:00:00Z');
 const event={title:'地域イベント',date_list:[{date:'2026-11-14',time_from:'10:00',time_to:'11:00'}],
@@ -44,8 +44,8 @@ test('Gateway event route is independently disabled by default and does not enab
  const src=readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
  assert.match(src,/FIREWALL_ACTIVITY_EVENTS_ENABLED==='true'/);
  assert.match(src,/event-egress-disabled/);
- assert.match(src,/\['tv','online',\.\.\.NEWS_SOURCE_IDS,'events','anilist','tokyo_koto_events','tokyo_sumida_events'\]/);
- assert.match(src,/const eventSource=kawasakiSource\|\|\['tokyo_koto_events','tokyo_sumida_events'\]/);
+ assert.match(src,/\['tv','online',\.\.\.NEWS_SOURCE_IDS,'events','anilist',\.\.\.TOKYO_EVENT_SOURCE_IDS\]/);
+ assert.match(src,/const eventSource=kawasakiSource\|\|TOKYO_EVENT_SOURCE_IDS\.includes\(command\?\.source\)/);
  assert.doesNotMatch(src,/autoCutover=true/);
 });
 
@@ -222,4 +222,41 @@ test('fixed RSS goes through bounded, read-only gateway and preserves bytes',asy
   }
   assert.equal(calls.length,Object.keys(FIXED).length);
   await assert.rejects(()=>collector.get('arbitrary_news'),/invalid-source/);
+});
+
+test('Tokyo: Koto, Sumida, Itabashi, Bunkyo and Chuo are fixed POST-only CC BY datasets',async()=>{
+ const expected={
+   tokyo_koto_events:'t131083d0000000017-252a3033bb76c746c8ee30c24a3a2b5a-0',
+   tokyo_sumida_events:'t131075d0000000136-d97c9fdbf7d4a3ad38c0cac25c78beb3-0',
+   tokyo_itabashi_events:'t131199d0000000141-800c4c5f071f4be278136b4d19b2bcf8-0',
+   tokyo_bunkyo_events:'t131059d0000000001-630186c15946c72991dddc3808cd46dc-0',
+   tokyo_chuo_events:'t131024d0000000041-e5e6d00248bbe97738bfb80d0d3d3e00-0'
+ };
+ assert.deepEqual([...TOKYO_EVENT_SOURCE_IDS].sort(),Object.keys(expected).sort());
+ const calls=[];
+ const src=createActivityAcquisition({clock:()=>NOW,fetchImpl:async(url,opts)=>{
+   const u=new URL(url);calls.push(u);
+   assert.equal(u.hostname,'service.api.metro.tokyo.lg.jp');
+   assert.match(u.pathname,/\/api\/t[0-9a-f-]+\/json$/);
+   assert.equal(opts.method,'POST');
+   assert.equal(opts.redirect,'manual');
+   assert.equal(opts.credentials,'omit');
+   assert.equal(opts.body,'{}');
+   assert.equal(opts.headers['Content-Type'],'application/json');
+   return ok({hits:[{_source:{'イベント名':'東京都の公開講座','開始日':'2026/11/14',
+     '場所名称':'東京ホール','緯度':'35.7','経度':'139.7',
+     'URL':'https://www.metro.tokyo.lg.jp/evt'}}]});
+ }});
+ for(const id of TOKYO_EVENT_SOURCE_IDS){
+   const packet=await src.get(id);
+   assert.equal(packet.source,id);
+   assert.equal(packet.tokyo.datasetId,id.slice(0,-7));
+   assert.equal(packet.tokyo.hits.length,1);
+   assert.equal(packet.personalDataCollected,false);
+   const matched=calls.at(-1);
+   assert(matched.pathname.includes(expected[id]),'fixed dataset ID '+id);
+   assert.equal(matched.searchParams.get('limit'),'250');
+ }
+ await assert.rejects(()=>src.get('tokyo_yokohama_events'),/invalid-source/);
+ assert.equal(calls.length,5);
 });
