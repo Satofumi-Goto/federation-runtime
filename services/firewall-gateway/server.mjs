@@ -272,7 +272,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     try{command=JSON.parse(body);}
     catch{return reply(res,400,{ok:false,reason:'invalid-json'});}
     if(!command||typeof command!=='object'||Array.isArray(command)||
-      Object.keys(command).length!==1||!['tv','online'].includes(command.source))
+      Object.keys(command).length!==1||!['tv','online','gdelt','mlit'].includes(command.source))
       return reply(res,400,{ok:false,reason:'unsupported-command'});
     if(!activitySourcesEnabled)return reply(res,503,{ok:false,reason:'activity-egress-disabled'});
     const shared=await enforceShared(identity.client,req.headers['x-fw-nonce'],'activity-acquisition');

@@ -87,3 +87,44 @@ test('TV raw credits and fixed online providers are gateway-only, bounded and ca
     ['https://swissdataevents.ch/events.json','https://rmxirzudhsautnsrdvib.supabase.co/functions/v1/public-events?format=json','https://red-look.com/ja/online.html'].includes(x)));
  });
 });
+
+test('news providers are fixed gateway-owned URLs, signed Activity-only, bytes bounded and cached',async()=>{
+ const calls=[];
+ const provider=async(url,options)=>{
+  calls.push(url);
+  assert.equal(options.method,'GET');
+  assert.equal(options.redirect,'manual');
+  assert.equal(options.credentials,'omit');
+  if(url.includes('gdeltproject.org'))return new Response(JSON.stringify({articles:[{title:'News',url:'https://example.org/news'}]}),{headers:{'content-type':'application/json'}});
+  if(url==='https://www.mlit.go.jp/pressrelease.rdf')return new Response(new Uint8Array([60,114,100,102,58,82,68,70,62]),{headers:{'content-type':'application/rdf+xml'}});
+  throw Error('unexpected-egress');
+ };
+ await serve(config({FIREWALL_ACTIVITY_SOURCES_ENABLED:'true'}),provider,async url=>{
+  const global=await request(url,'gdelt');
+  const ministry=await request(url,'mlit');
+  assert.equal(global.status,200);
+  assert.equal(ministry.status,200);
+  for(const packet of [global.data,ministry.data]){
+   assert.equal(packet.schema,'gateway.activity-raw/1');
+   assert.equal(packet.personalDataCollected,false);
+   assert.equal(packet.data.encoding,'base64url');
+   assert.match(packet.data.body,/^[A-Za-z0-9_-]+$/);
+  }
+  assert.deepEqual(JSON.parse(Buffer.from(global.data.data.body,'base64url').toString('utf8')).articles[0].title,'News');
+  assert.equal(Buffer.from(ministry.data.data.body,'base64url').toString('utf8'),'<rdf:RDF>');
+  const count=calls.length;
+  await request(url,'gdelt');await request(url,'mlit');
+  assert.equal(calls.length,count,'source-level cache prevents repeated outbound requests');
+  assert.equal(count,2);
+  assert.equal((await request(url,'arbitrary-url')).status,400);
+  assert(calls.every(x=>x.startsWith('https://api.gdeltproject.org/api/v2/doc/doc?query=')||x==='https://www.mlit.go.jp/pressrelease.rdf'));
+ });
+});
+test('news gateway denies unconfigured egress and never fetches provider directly',async()=>{
+ let calls=0;
+ await serve(config(),async()=>{calls++;throw Error('no egress');},async url=>{
+   assert.equal((await request(url,'mlit')).status,503);
+   assert.equal((await request(url,'gdelt')).status,503);
+   assert.equal(calls,0);
+ });
+});
