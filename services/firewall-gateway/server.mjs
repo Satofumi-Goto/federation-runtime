@@ -279,21 +279,22 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     let command;
     try{command=JSON.parse(body);}
     catch{return reply(res,400,{ok:false,reason:'invalid-json'});}
-    const eventSource=command?.source==='events';
+    const kawasakiSource=command?.source==='events';
+    const eventSource=kawasakiSource||['tokyo_koto_events','tokyo_sumida_events'].includes(command?.source);
     const keys=command&&typeof command==='object'&&!Array.isArray(command)
       ?Object.keys(command).sort().join(','):'';
-    const eventQuery=eventSource&&keys==='from,page,source,to'
+    const eventQuery=kawasakiSource&&keys==='from,page,source,to'
       ?validateEventQuery(command,clock()):null;
     if(!command||typeof command!=='object'||Array.isArray(command)||
-      !['tv','online','gdelt','mlit','events','anilist'].includes(command.source)||
-      (eventSource?!eventQuery:keys!=='source'))
+      !['tv','online','gdelt','mlit','events','anilist','tokyo_koto_events','tokyo_sumida_events'].includes(command.source)||
+      (kawasakiSource?!eventQuery:keys!=='source'))
       return reply(res,400,{ok:false,reason:'unsupported-command'});
     const newsSource=command.source==='gdelt'||command.source==='mlit';
     const identity=(eventSource?eventAuth:newsSource?newsAuth:sourceAuth).verify(req,body,path);
     if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
     if(identity.client!=='activity')return reply(res,403,{ok:false,reason:'activity-only'});
     if(!activitySourcesEnabled)return reply(res,503,{ok:false,reason:'activity-egress-disabled'});
-    if(command.source==='events'&&!activityEventsEnabled)
+    if(eventSource&&!activityEventsEnabled)
       return reply(res,503,{ok:false,reason:'event-egress-disabled'});
     const shared=await enforceShared(identity.client,req.headers['x-fw-nonce'],'activity-acquisition');
     if(!shared.ok)return reply(res,shared.status,{ok:false,reason:shared.reason},
