@@ -105,6 +105,11 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  const newsAuth=createAuthenticator({env:{
    FIREWALL_CLIENT_KEYS_JSON:newsKey?JSON.stringify({activity:newsKey}):''
  },clock});
+ // Dedicated event-read key. Do not rotate or reuse TV/online/news HMAC grants.
+ const eventKey=env.FIREWALL_ACTIVITY_EVENT_ACQUISITION_KEY||'';
+ const eventAuth=createAuthenticator({env:{
+   FIREWALL_CLIENT_KEYS_JSON:eventKey?JSON.stringify({activity:eventKey}):''
+ },clock});
  const access=createAccessVerifier({env,fetchImpl,clock});
  const egress=createEgress({env,fetchImpl,clock});
  const activityAcquisition=createActivityAcquisition({fetchImpl,clock});
@@ -284,7 +289,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       (eventSource?!eventQuery:keys!=='source'))
       return reply(res,400,{ok:false,reason:'unsupported-command'});
     const newsSource=command.source==='gdelt'||command.source==='mlit';
-    const identity=(newsSource?newsAuth:sourceAuth).verify(req,body,path);
+    const identity=(eventSource?eventAuth:newsSource?newsAuth:sourceAuth).verify(req,body,path);
     if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
     if(identity.client!=='activity')return reply(res,403,{ok:false,reason:'activity-only'});
     if(!activitySourcesEnabled)return reply(res,503,{ok:false,reason:'activity-egress-disabled'});
