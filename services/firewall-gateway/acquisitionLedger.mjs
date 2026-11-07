@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 const raw=JSON.parse(readFileSync(new URL('./acquisition-routes.json',import.meta.url),'utf8'));
 const STATES=new Set(['確認済み','未確認','接続なし']);
 // Keys pasted on one service only. The gateway cannot see them, so it reports null.
-export const SERVICE_SCOPED_KEYS=Object.freeze({VITE_GOOGLE_MAPS_API_KEY:'seneschal'});
+export const SERVICE_SCOPED_KEYS=Object.freeze({VITE_GOOGLE_MAPS_API_KEY:'seneschal',GEOAPIFY_API_KEY:'seneschal',GOOGLE_ENVIRONMENT_API_KEY:'seneschal'});
 const KEY_NAME=/^[A-Z][A-Z0-9_]{2,63}$/;
 
 export function validateLedger(ledger){

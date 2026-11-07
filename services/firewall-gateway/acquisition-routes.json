@@ -40,7 +40,14 @@
         "nationalLandDelegated",
         "wikidataDelegated",
         "reinfolibDelegated",
-        "openChargeMapDelegated"
+        "openChargeMapDelegated",
+        "poiSupplementCommons",
+        "poiSupplementStations",
+        "poiSupplementAddress",
+        "poiSupplementJapansearch",
+        "poiSupplementElevation",
+        "poiSupplementGeoapify",
+        "poiSupplementWalking"
       ]
     },
     {
@@ -54,7 +61,10 @@
         "wbgt",
         "amedas",
         "typhoon",
-        "wxtechPollenRadar"
+        "wxtechPollenRadar",
+        "poiSupplementWeather",
+        "poiSupplementAirquality",
+        "poiSupplementPollen"
       ]
     },
     {
@@ -971,6 +981,136 @@
       "evidence": null,
       "candidate": "無料Developerプランは本番公開不可。本番用の契約なし。",
       "requiredKeys": []
+    },
+    {
+      "id": "poiSupplementCommons",
+      "name": "Wikimedia Commons 周辺写真",
+      "basis": "registered",
+      "primary": "Seneschal searchExternalPoi supplements/commons → Wikimedia Commons 周辺写真（選択POIの手動取得）",
+      "secondary": null,
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "開発環境の実通信のみ確認。本番配備・公開画面は未検証。",
+      "requiredKeys": []
+    },
+    {
+      "id": "poiSupplementStations",
+      "name": "HeartRails Express 最寄り駅",
+      "basis": "registered",
+      "primary": "Seneschal searchExternalPoi supplements/stations → HeartRails Express 最寄り駅（選択POIの手動取得）",
+      "secondary": null,
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "開発環境の実通信のみ確認。本番配備・公開画面は未検証。",
+      "requiredKeys": []
+    },
+    {
+      "id": "poiSupplementAddress",
+      "name": "HeartRails Geo 周辺町域",
+      "basis": "registered",
+      "primary": "Seneschal searchExternalPoi supplements/address → HeartRails Geo 周辺町域（選択POIの手動取得）",
+      "secondary": null,
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "開発環境の実通信のみ確認。本番配備・公開画面は未検証。",
+      "requiredKeys": []
+    },
+    {
+      "id": "poiSupplementJapansearch",
+      "name": "ジャパンサーチ 関連資料",
+      "basis": "registered",
+      "primary": "Seneschal searchExternalPoi supplements/japansearch → ジャパンサーチ 関連資料（選択POIの手動取得）",
+      "secondary": null,
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "開発環境の実通信のみ確認。本番配備・公開画面は未検証。",
+      "requiredKeys": []
+    },
+    {
+      "id": "poiSupplementElevation",
+      "name": "国土地理院 標高API",
+      "basis": "registered",
+      "primary": "Seneschal searchExternalPoi supplements/elevation → 国土地理院 標高API（選択POIの手動取得）",
+      "secondary": null,
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "開発環境の実通信のみ確認。本番配備・公開画面は未検証。",
+      "requiredKeys": []
+    },
+    {
+      "id": "poiSupplementGeoapify",
+      "name": "Geoapify 周辺施設",
+      "basis": "registered",
+      "primary": "Seneschal searchExternalPoi supplements/geoapify → Geoapify 周辺施設（選択POIの手動取得）",
+      "secondary": null,
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "専用キー未設定。本番実通信と公開画面は未検証。",
+      "requiredKeys": [
+        "GEOAPIFY_API_KEY"
+      ]
+    },
+    {
+      "id": "poiSupplementWalking",
+      "name": "Geoapify 徒歩10分圏",
+      "basis": "registered",
+      "primary": "Seneschal searchExternalPoi supplements/walking → Geoapify 徒歩10分圏（選択POIの手動取得）",
+      "secondary": null,
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "専用キー未設定。本番実通信と公開画面は未検証。",
+      "requiredKeys": [
+        "GEOAPIFY_API_KEY"
+      ]
+    },
+    {
+      "id": "poiSupplementWeather",
+      "name": "Google Weather 現在の天気",
+      "basis": "registered",
+      "primary": "Seneschal searchExternalPoi supplements/weather → Google Weather 現在の天気（選択POIの手動取得）",
+      "secondary": null,
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "専用キー未設定。本番実通信と公開画面は未検証。",
+      "requiredKeys": [
+        "GOOGLE_ENVIRONMENT_API_KEY"
+      ]
+    },
+    {
+      "id": "poiSupplementAirquality",
+      "name": "Google Air Quality 現在の大気質",
+      "basis": "registered",
+      "primary": "Seneschal searchExternalPoi supplements/airquality → Google Air Quality 現在の大気質（選択POIの手動取得）",
+      "secondary": null,
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "専用キー未設定。本番実通信と公開画面は未検証。",
+      "requiredKeys": [
+        "GOOGLE_ENVIRONMENT_API_KEY"
+      ]
+    },
+    {
+      "id": "poiSupplementPollen",
+      "name": "Google Pollen 花粉予報",
+      "basis": "registered",
+      "primary": "Seneschal searchExternalPoi supplements/pollen → Google Pollen 花粉予報（選択POIの手動取得）",
+      "secondary": null,
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "専用キー未設定。本番実通信と公開画面は未検証。",
+      "requiredKeys": [
+        "GOOGLE_ENVIRONMENT_API_KEY"
+      ]
     }
   ]
 }

@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import {ACQUISITION_LEDGER,publicAcquisitionLedger,validateLedger} from '../acquisitionLedger.mjs';
 import {createGatewayServer} from '../server.mjs';
 
-test('gateway owns the 67-route Seneschal acquisition ledger, one category per route',()=>{
+test('gateway owns the 77-route Seneschal acquisition ledger, one category per route',()=>{
  assert.equal(ACQUISITION_LEDGER.owner,'firewall-gateway');
- assert.equal(ACQUISITION_LEDGER.routes.length,67);
+ assert.equal(ACQUISITION_LEDGER.routes.length,77);
  const s=publicAcquisitionLedger({}).summary;
- assert.deepEqual([s.verified,s.unverified,s.unconnected],[4,30,33]);
+ assert.deepEqual([s.verified,s.unverified,s.unconnected],[4,40,33]);
  assert.throws(()=>validateLedger({...ACQUISITION_LEDGER,routes:[...ACQUISITION_LEDGER.routes,ACQUISITION_LEDGER.routes[0]]}),/duplicate/);
 });
 
@@ -19,6 +19,8 @@ test('key state is presence only; service-scoped map key is unknown to the gatew
  assert.equal(keys.HOTPEPPER_API_KEY.configured,true);
  assert.equal(keys.RAKUTEN_ACCESS_KEY.configured,false);
  assert.deepEqual(keys.VITE_GOOGLE_MAPS_API_KEY,{name:'VITE_GOOGLE_MAPS_API_KEY',scope:'service',service:'seneschal',configured:null});
+ assert.equal(keys.GEOAPIFY_API_KEY.scope,'service');
+ assert.equal(keys.GOOGLE_ENVIRONMENT_API_KEY.configured,null);
  assert.equal(out.egressChanged,false);
 });
 
@@ -30,7 +32,7 @@ test('GET /api/acquisition-routes allows registered app origins only',async()=>{
   const ok=await fetch(root,{headers:{origin:'https://activity-standalone-staging.onrender.com'}});
   assert.equal(ok.status,200);
   assert.equal(ok.headers.get('access-control-allow-origin'),'https://activity-standalone-staging.onrender.com');
-  assert.equal((await ok.json()).routes.length,67);
+  assert.equal((await ok.json()).routes.length,77);
   const other=await fetch(root,{headers:{origin:'https://evil.example'}});
   assert.equal(other.headers.get('access-control-allow-origin'),null);
  }finally{await new Promise(r=>app.server.close(r));}
