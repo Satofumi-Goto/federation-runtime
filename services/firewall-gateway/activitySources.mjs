@@ -9,7 +9,7 @@ const TV='https://api.tvmaze.com';
 const KAWASAKI='https://eventapp.city.kawasaki.jp/data/api/v1/events';
 // Only two fixed, keyless headline providers. No caller URL, topic or location.
 const NEWS=Object.freeze({
-  gdelt:'https://api.gdeltproject.org/api/v2/doc/doc?query='+encodeURIComponent('("autonomous driving" OR "electric vehicle" OR "public transport" OR "artificial intelligence" OR "Japan")')+'&mode=artlist&maxrecords=12&timespan=24h&sort=datedesc&format=json',
+  gdelt:'https://api.gdeltproject.org/api/v2/doc/doc?query='+encodeURIComponent('"electric vehicle"')+'&mode=artlist&maxrecords=6&timespan=12h&sort=datedesc&format=json',
   mlit:'https://www.mlit.go.jp/pressrelease.rdf',
 });
 // One fixed, non-personal AniList request. No caller-supplied GraphQL, URL or credentials.
@@ -43,7 +43,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
       ...(anilist?{body:ANILIST_BODY}:{}),signal});
     if(!response.ok||response.status>=300&&response.status<400){
       const error=new Error('upstream-unavailable');
-      if(anilist&&response.status===429){
+      if((anilist||u.href===NEWS.gdelt)&&response.status===429){
         const retry=response.headers?.get?.('retry-after')||'';
         const ms=/^\d{1,6}$/.test(retry)?Number(retry)*1000:Date.parse(retry)-clock();
         error.cooldownMs=Math.min(24*HOUR,Math.max(HOUR,Number.isFinite(ms)?ms:0));
@@ -54,6 +54,15 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
     if(Number.isFinite(declared)&&declared>MAX_BYTES)throw Error('upstream-too-large');
     const buf=await response.arrayBuffer();
     if(buf.byteLength>MAX_BYTES)throw Error('upstream-too-large');
+    if(u.href===NEWS.gdelt){
+      // GDELT can return a throttle/usage notice as HTTP 200 text.
+      // Reject and back off rather than caching malformed headlines.
+      let document;
+      try{document=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(buf));}
+      catch{const error=new Error('invalid-gdelt-json');error.cooldownMs=HOUR;throw error;}
+      if(!Array.isArray(document?.articles)||document.articles.length>6)
+        throw Error('invalid-gdelt-articles');
+    }
     if(anilist){
       let raw;
       try{raw=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(buf));}
@@ -137,7 +146,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
           personalDataCollected:false,...data};
         cache.set(source,{until:clock()+TTL,value});cooldowns.delete(source);
         return value;
-      }catch(e){cooldowns.set(source,clock()+(source==='anilist'&&Number.isFinite(e.cooldownMs)?e.cooldownMs:60_000));throw e;}
+      }catch(e){cooldowns.set(source,clock()+((source==='anilist'||source==='gdelt')&&Number.isFinite(e.cooldownMs)?e.cooldownMs:source==='gdelt'?15*60_000:60_000));throw e;}
       finally{clearTimeout(timer);}
     })().finally(()=>pending.delete(source));
     pending.set(source,promise);
