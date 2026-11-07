@@ -10,6 +10,9 @@ const KAWASAKI='https://eventapp.city.kawasaki.jp/data/api/v1/events';
 const TOKYO_EVENT_URLS=Object.freeze({
   tokyo_koto_events:'https://service.api.metro.tokyo.lg.jp/api/t131083d0000000017-252a3033bb76c746c8ee30c24a3a2b5a-0/json?limit=250',
   tokyo_sumida_events:'https://service.api.metro.tokyo.lg.jp/api/t131075d0000000136-d97c9fdbf7d4a3ad38c0cac25c78beb3-0/json?limit=250',
+  tokyo_itabashi_events:'https://service.api.metro.tokyo.lg.jp/api/t131199d0000000141-800c4c5f071f4be278136b4d19b2bcf8-0/json?limit=250',
+  tokyo_bunkyo_events:'https://service.api.metro.tokyo.lg.jp/api/t131059d0000000001-630186c15946c72991dddc3808cd46dc-0/json?limit=250',
+  tokyo_chuo_events:'https://service.api.metro.tokyo.lg.jp/api/t131024d0000000041-e5e6d00248bbe97738bfb80d0d3d3e00-0/json?limit=250',
 });
 // Fixed public headline RSS feeds plus the existing signed news sources.
 // No caller-defined query, URL, location, publisher text or paid endpoint.
@@ -23,6 +26,7 @@ const NEWS=Object.freeze({
   google_entertainment:'https://news.google.com/rss/headlines/section/topic/ENTERTAINMENT?hl=ja&gl=JP&ceid=JP:ja',
   google_business:'https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=ja&gl=JP&ceid=JP:ja',
 });
+export const TOKYO_EVENT_SOURCE_IDS=Object.freeze(Object.keys(TOKYO_EVENT_URLS));
 export const NEWS_SOURCE_IDS=Object.freeze(Object.keys(NEWS));
 const RSS_NEWS_IDS=new Set(['mlit','yahoo_domestic','yahoo_entertainment','yahoo_sports','google_japan','google_entertainment','google_business']);
 // One fixed, non-personal AniList request. No caller-supplied GraphQL, URL or credentials.
@@ -237,7 +241,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
       providers:[{id:source.replace(/_events$/,''),state:'ok',count:hits.length}]};
   }
   async function get(source,selector=null){
-    if(!['tv','online',...NEWS_SOURCE_IDS,'events','anilist','tokyo_koto_events','tokyo_sumida_events'].includes(source))throw Error('invalid-source');
+    if(!['tv','online',...NEWS_SOURCE_IDS,'events','anilist',...TOKYO_EVENT_SOURCE_IDS].includes(source))throw Error('invalid-source');
     const now=clock();
     const query=source==='events'
       ?validateEventQuery(selector??{from:day(now),to:day(now+14*24*HOUR),page:1},now):null;
