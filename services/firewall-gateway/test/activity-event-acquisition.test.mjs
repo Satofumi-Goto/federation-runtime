@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createActivityAcquisition,validateEventQuery,projectKawasakiEvent} from '../activitySources.mjs';
+import {createActivityAcquisition,validateEventQuery,projectKawasakiEvent,projectTokyoEventHit} from '../activitySources.mjs';
 
 const NOW=Date.parse('2026-11-07T03:00:00Z');
 const event={title:'地域イベント',date_list:[{date:'2026-11-14',time_from:'10:00',time_to:'11:00'}],
@@ -44,7 +44,7 @@ test('Gateway event route is independently disabled by default and does not enab
  const src=readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
  assert.match(src,/FIREWALL_ACTIVITY_EVENTS_ENABLED==='true'/);
  assert.match(src,/event-egress-disabled/);
- assert.match(src,/\['tv','online','gdelt','mlit','events','anilist'\]/);
+ assert.match(src,/\['tv','online','gdelt','mlit','events','anilist','tokyo_koto_events','tokyo_sumida_events'\]/);
  assert.doesNotMatch(src,/autoCutover=true/);
 });
 
@@ -136,4 +136,46 @@ test('Kawasaki payload above fixed 900KB is rejected without page fallback or sy
  }});
  await assert.rejects(()=>source.get('events'),/upstream-too-large/);
  assert.equal(calls,1);
+});
+
+test('Tokyo Koto and Sumida only reach pinned official POST datasets and public-field transport',async()=>{
+ const fetched=[];
+ const fake=async(url,init)=>{
+   fetched.push(url);
+   assert.equal(init.method,'POST');
+   assert.equal(init.body,'{}');
+   assert.equal(init.redirect,'manual');
+   assert.equal(init.credentials,'omit');
+   assert.equal(new URL(url).hostname,'service.api.metro.tokyo.lg.jp');
+   assert.equal(new URL(url).searchParams.get('limit'),'250');
+   return ok({hits:[{_source:{'イベント名':'地区の公開行事','開始日':'2026/11/17',
+       '緯度':'35.65','経度':'139.80','開催場所':'区民会館',
+       'URL':'https://www.city.koto.lg.jp/',contact_person:'not-public'}}]});
+ };
+ const source=createActivityAcquisition({fetchImpl:fake,clock:()=>NOW});
+ const koto=await source.get('tokyo_koto_events');
+ const sumida=await source.get('tokyo_sumida_events');
+ assert.equal(koto.schema,'gateway.activity-raw/1');
+ assert.equal(koto.source,'tokyo_koto_events');
+ assert.equal(koto.personalDataCollected,false);
+ assert.equal(koto.tokyo.datasetId,'tokyo_koto');
+ assert.equal(koto.tokyo.hits[0]._source['イベント名'],'地区の公開行事');
+ assert.equal(koto.tokyo.hits[0]._source.contact_person,undefined);
+ assert.equal(sumida.tokyo.datasetId,'tokyo_sumida');
+ assert.equal(fetched.length,2);
+ const cached=await source.get('tokyo_koto_events');
+ assert.equal(cached.cached,true);
+ assert.equal(fetched.length,2);
+});
+test('Tokyo source cannot receive arbitrary URLs or expose opaque operator fields',async()=>{
+ assert.deepEqual(projectTokyoEventHit({_source:{'名称':'文化行事',phone:'secret'}}),
+   {_source:{'名称':'文化行事'}});
+ let calls=0;
+ const source=createActivityAcquisition({fetchImpl:async()=>{calls++;return ok({hits:[]});},clock:()=>NOW});
+ await assert.rejects(()=>source.get('tokyo_custom_events'),/invalid-source/);
+ assert.equal(calls,0);
+});
+test('Tokyo oversized or malformed official result fails closed without partial publication',async()=>{
+ const source=createActivityAcquisition({clock:()=>NOW,fetchImpl:async()=>ok({hits:Array(251).fill({_source:{'名称':'X'}})})});
+ await assert.rejects(()=>source.get('tokyo_koto_events'),/invalid-tokyo-events/);
 });
