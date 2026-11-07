@@ -6,7 +6,7 @@ import {readFileSync} from 'node:fs';
 import {createAuthenticator} from './auth.mjs';
 import {createAccessVerifier} from './access.mjs';
 import {createEgress} from './egress.mjs';
-import {createActivityAcquisition,validateEventQuery,NEWS_SOURCE_IDS} from './activitySources.mjs';
+import {createActivityAcquisition,validateEventQuery,NEWS_SOURCE_IDS,TOKYO_EVENT_SOURCE_IDS} from './activitySources.mjs';
 import {createGithubCanaryVerifier} from './githubCanary.mjs';
 import {createAssistant,parseAssistantCommand,ASSISTANT_PATH,ASSISTANT_MAX_BODY,ASSISTANT_POLICY} from './assistant.mjs';
 import {publicCatalog,publicClients,SIGNING_CONTRACT} from './policy.mjs';
@@ -286,13 +286,13 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     try{command=JSON.parse(body);}
     catch{return reply(res,400,{ok:false,reason:'invalid-json'});}
     const kawasakiSource=command?.source==='events';
-    const eventSource=kawasakiSource||['tokyo_koto_events','tokyo_sumida_events'].includes(command?.source);
+    const eventSource=kawasakiSource||TOKYO_EVENT_SOURCE_IDS.includes(command?.source);
     const keys=command&&typeof command==='object'&&!Array.isArray(command)
       ?Object.keys(command).sort().join(','):'';
     const eventQuery=kawasakiSource&&keys==='from,page,source,to'
       ?validateEventQuery(command,clock()):null;
     if(!command||typeof command!=='object'||Array.isArray(command)||
-      !['tv','online',...NEWS_SOURCE_IDS,'events','anilist','tokyo_koto_events','tokyo_sumida_events'].includes(command.source)||
+      !['tv','online',...NEWS_SOURCE_IDS,'events','anilist',...TOKYO_EVENT_SOURCE_IDS].includes(command.source)||
       (kawasakiSource?!eventQuery:keys!=='source'))
       return reply(res,400,{ok:false,reason:'unsupported-command'});
     const newsSource=NEWS_SOURCE_IDS.includes(command.source);
