@@ -11,11 +11,20 @@ const TOKYO_EVENT_URLS=Object.freeze({
   tokyo_koto_events:'https://service.api.metro.tokyo.lg.jp/api/t131083d0000000017-252a3033bb76c746c8ee30c24a3a2b5a-0/json?limit=250',
   tokyo_sumida_events:'https://service.api.metro.tokyo.lg.jp/api/t131075d0000000136-d97c9fdbf7d4a3ad38c0cac25c78beb3-0/json?limit=250',
 });
-// Only two fixed, keyless headline providers. No caller URL, topic or location.
+// Fixed public headline RSS feeds plus the existing signed news sources.
+// No caller-defined query, URL, location, publisher text or paid endpoint.
 const NEWS=Object.freeze({
   gdelt:'https://api.gdeltproject.org/api/v2/doc/doc?query='+encodeURIComponent('"electric vehicle"')+'&mode=artlist&maxrecords=6&timespan=12h&sort=datedesc&format=json',
   mlit:'https://www.mlit.go.jp/pressrelease.rdf',
+  yahoo_domestic:'https://news.yahoo.co.jp/rss/topics/domestic.xml',
+  yahoo_entertainment:'https://news.yahoo.co.jp/rss/topics/entertainment.xml',
+  yahoo_sports:'https://news.yahoo.co.jp/rss/topics/sports.xml',
+  google_japan:'https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja',
+  google_entertainment:'https://news.google.com/rss/headlines/section/topic/ENTERTAINMENT?hl=ja&gl=JP&ceid=JP:ja',
+  google_business:'https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=ja&gl=JP&ceid=JP:ja',
 });
+export const NEWS_SOURCE_IDS=Object.freeze(Object.keys(NEWS));
+const RSS_NEWS_IDS=new Set(['mlit','yahoo_domestic','yahoo_entertainment','yahoo_sports','google_japan','google_entertainment','google_business']);
 // One fixed, non-personal AniList request. No caller-supplied GraphQL, URL or credentials.
 const ANILIST_URL='https://graphql.anilist.co/';
 const ANILIST_BODY=JSON.stringify({query:'query { Page(page:1,perPage:6) { media(type:ANIME,sort:TRENDING_DESC,isAdult:false) { id title { native romaji } siteUrl format nextAiringEpisode { airingAt episode } } } }'});
@@ -111,7 +120,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
            /^\d{4}-\d{2}-\d{2}$/.test(u.searchParams.get('to')||'')
          ))throw Error('upstream-not-allowed');
     const response=await fetchImpl(u.href,{method:anilist||tokyo?'POST':'GET',redirect:'manual',credentials:'omit',
-      headers:{Accept:html?'text/html':'application/json',...((anilist||tokyo)?{'Content-Type':'application/json'}:{})},
+      headers:{Accept:html?'text/html':RSS_NEWS_IDS.has(Object.keys(NEWS).find(id=>NEWS[id]===u.href))?'application/rss+xml, application/xml, text/xml':'application/json',...((anilist||tokyo)?{'Content-Type':'application/json'}:{})},
       ...(anilist?{body:ANILIST_BODY}:tokyo?{body:'{}'}:{}),signal});
     if(!response.ok||response.status>=300&&response.status<400){
       const error=new Error('upstream-unavailable');
@@ -228,7 +237,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
       providers:[{id:source.replace(/_events$/,''),state:'ok',count:hits.length}]};
   }
   async function get(source,selector=null){
-    if(!['tv','online','gdelt','mlit','events','anilist','tokyo_koto_events','tokyo_sumida_events'].includes(source))throw Error('invalid-source');
+    if(!['tv','online',...NEWS_SOURCE_IDS,'events','anilist','tokyo_koto_events','tokyo_sumida_events'].includes(source))throw Error('invalid-source');
     const now=clock();
     const query=source==='events'
       ?validateEventQuery(selector??{from:day(now),to:day(now+14*24*HOUR),page:1},now):null;
