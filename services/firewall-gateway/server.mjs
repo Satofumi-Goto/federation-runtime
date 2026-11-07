@@ -301,8 +301,13 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     signedClients.add('activity');
     try{
       return reply(res,200,{ok:true,...await activityAcquisition.get(command.source,eventQuery)});
-    }catch{
-      return reply(res,503,{ok:false,reason:'activity-upstream-unavailable'});
+    }catch(error){
+      // Public reason codes only; never expose upstream body, URL or credentials.
+      // A GDELT 200 text throttle and subsequent cooldown are NOT valid news.
+      const reason=error?.message==='gdelt-throttled'?'activity-provider-rate-limited'
+        :error?.message==='upstream-cooldown'?'activity-provider-cooldown'
+        :'activity-upstream-unavailable';
+      return reply(res,503,{ok:false,reason});
     }
    }
    if(path==='/api/v1/shadow/probe'){
