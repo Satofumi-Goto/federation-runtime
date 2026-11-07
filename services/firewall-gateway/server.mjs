@@ -104,6 +104,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  const egress=createEgress({env,fetchImpl,clock});
  const activityAcquisition=createActivityAcquisition({fetchImpl,clock});
  const activitySourcesEnabled=env.FIREWALL_ACTIVITY_SOURCES_ENABLED==='true';
+ const activityEventsEnabled=env.FIREWALL_ACTIVITY_EVENTS_ENABLED==='true';
  const githubCanary=createGithubCanaryVerifier({env,fetchImpl,clock});
  // Strict opt-in: signed requests must claim a distributed nonce and budget
  // BEFORE any upstream or assistant invocation. Storage failure denies.
@@ -272,9 +273,11 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     try{command=JSON.parse(body);}
     catch{return reply(res,400,{ok:false,reason:'invalid-json'});}
     if(!command||typeof command!=='object'||Array.isArray(command)||
-      Object.keys(command).length!==1||!['tv','online','gdelt','mlit'].includes(command.source))
+      Object.keys(command).length!==1||!['tv','online','gdelt','mlit','events'].includes(command.source))
       return reply(res,400,{ok:false,reason:'unsupported-command'});
     if(!activitySourcesEnabled)return reply(res,503,{ok:false,reason:'activity-egress-disabled'});
+    if(command.source==='events'&&!activityEventsEnabled)
+      return reply(res,503,{ok:false,reason:'event-egress-disabled'});
     const shared=await enforceShared(identity.client,req.headers['x-fw-nonce'],'activity-acquisition');
     if(!shared.ok)return reply(res,shared.status,{ok:false,reason:shared.reason},
       shared.retryAfterSeconds?{'Retry-After':String(shared.retryAfterSeconds)}:{});
