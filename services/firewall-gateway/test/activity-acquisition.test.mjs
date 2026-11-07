@@ -4,10 +4,11 @@ import {randomBytes} from 'node:crypto';
 import {createGatewayServer} from '../server.mjs';
 import {signHeaders} from '../auth.mjs';
 const NOW=Date.parse('2026-11-07T00:00:00.000Z'),PATH='/api/v1/activity/acquire';
-const KEY=randomBytes(32),NEWS_KEY=randomBytes(32);
+const KEY=randomBytes(32),NEWS_KEY=randomBytes(32),EVENT_KEY=randomBytes(32);
 const config=(flags={})=>({FIREWALL_CLIENT_KEYS_JSON:JSON.stringify({activity:KEY.toString('base64url')}),
  FIREWALL_ACTIVITY_ACQUISITION_KEY:KEY.toString('base64url'),
- FIREWALL_ACTIVITY_NEWS_KEY:NEWS_KEY.toString('base64url'),...flags});
+ FIREWALL_ACTIVITY_NEWS_KEY:NEWS_KEY.toString('base64url'),
+ FIREWALL_ACTIVITY_EVENT_ACQUISITION_KEY:EVENT_KEY.toString('base64url'),...flags});
 async function serve(env,fetchImpl,fn){
  const app=createGatewayServer({env,clock:()=>NOW,fetchImpl,auditSink:()=>{}});
  await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
@@ -21,6 +22,45 @@ async function request(base,source='online',extra={}){
  const r=await fetch(base+PATH,{method:'POST',headers,body});
  return {status:r.status,data:await r.json()};
 }
+async function eventRequest(root,key=EVENT_KEY,range={from:'2026-11-07',to:'2026-11-21',page:1}){
+ const body=JSON.stringify({source:'events',...range});
+ const headers={'content-type':'application/json',
+   ...signHeaders({client:'activity',key,body,path:PATH,time:NOW})};
+ const response=await fetch(root+PATH,{method:'POST',headers,body});
+ return {status:response.status,data:await response.json()};
+}
+test('event HMAC alone authorizes public city events, never TV or news',async()=>{
+ let fetched=0;
+ const provider=async url=>{
+   fetched++;
+   assert.match(url,/eventapp\.city\.kawasaki\.jp/);
+   return new Response(JSON.stringify({total_pages:1,event_data:[]}),
+      {headers:{'content-type':'application/json'}});
+ };
+ await serve(config({FIREWALL_ACTIVITY_SOURCES_ENABLED:'true',
+   FIREWALL_ACTIVITY_EVENTS_ENABLED:'true'}),provider,async root=>{
+   const good=await eventRequest(root);
+   assert.equal(good.status,200);
+   assert.equal(good.data.kawasaki.page,1);
+   assert.equal((await eventRequest(root,KEY)).status,401);
+   assert.equal((await eventRequest(root,NEWS_KEY)).status,401);
+   const b='{"source":"tv"}';
+   const signed=signHeaders({client:'activity',key:EVENT_KEY,body:b,path:PATH,time:NOW});
+   const tv=await fetch(root+PATH,{method:'POST',headers:{'content-type':'application/json',...signed},body:b});
+   assert.equal(tv.status,401);
+ });
+ assert.equal(fetched,1);
+});
+test('no event key and default-off event flag both deny provider egress',async()=>{
+ let calls=0;
+ const provider=async()=>{calls++;throw Error('should not fetch');};
+ await serve(config({FIREWALL_ACTIVITY_SOURCES_ENABLED:'true',
+   FIREWALL_ACTIVITY_EVENTS_ENABLED:'true',FIREWALL_ACTIVITY_EVENT_ACQUISITION_KEY:''}),
+   provider,async root=>assert.equal((await eventRequest(root)).status,503));
+ await serve(config({FIREWALL_ACTIVITY_SOURCES_ENABLED:'true'}),
+   provider,async root=>assert.equal((await eventRequest(root)).status,503));
+ assert.equal(calls,0);
+});
 test('off by default; signed activity receives 503 and NO outbound traffic',async()=>{
  let calls=0;
  await serve(config(),async()=>{calls++;throw Error('should not fetch');},async url=>{
