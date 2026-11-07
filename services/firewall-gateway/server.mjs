@@ -94,6 +94,12 @@ export function readinessStatus({env=process.env,distributed=false}={}){
 }
 export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.now,auditSink=console.info}={}){
  const auth=createAuthenticator({env,clock});
+ // Activity acquisition uses a dedicated secret; never rotate or overwrite
+ // keys of the nine existing Gateway clients to connect this feature.
+ const sourceKey=env.FIREWALL_ACTIVITY_ACQUISITION_KEY||'';
+ const sourceAuth=createAuthenticator({env:{
+   FIREWALL_CLIENT_KEYS_JSON:sourceKey?JSON.stringify({activity:sourceKey}):''
+ },clock});
  const access=createAccessVerifier({env,fetchImpl,clock});
  const egress=createEgress({env,fetchImpl,clock});
  const activityAcquisition=createActivityAcquisition({fetchImpl,clock});
@@ -259,7 +265,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     let body;
     try{body=await limitedBody(req,64);}
     catch{return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});}
-    const identity=auth.verify(req,body,path);
+    const identity=sourceAuth.verify(req,body,path);
     if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
     if(identity.client!=='activity')return reply(res,403,{ok:false,reason:'activity-only'});
     let command;
