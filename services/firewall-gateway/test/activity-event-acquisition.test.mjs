@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createActivityAcquisition,validateEventQuery,projectKawasakiEvent,projectTokyoEventHit} from '../activitySources.mjs';
+import {createActivityAcquisition,validateEventQuery,projectKawasakiEvent,projectTokyoEventHit,NEWS_SOURCE_IDS} from '../activitySources.mjs';
 
 const NOW=Date.parse('2026-11-07T03:00:00Z');
 const event={title:'地域イベント',date_list:[{date:'2026-11-14',time_from:'10:00',time_to:'11:00'}],
@@ -179,4 +179,47 @@ test('Tokyo source cannot receive arbitrary URLs or expose opaque operator field
 test('Tokyo oversized or malformed official result fails closed without partial publication',async()=>{
  const source=createActivityAcquisition({clock:()=>NOW,fetchImpl:async()=>ok({hits:Array(251).fill({_source:{'名称':'X'}})})});
  await assert.rejects(()=>source.get('tokyo_koto_events'),/invalid-tokyo-events/);
+});
+
+// Fixed new RSS sources: pinned and signed; no caller supplied URL.
+const FIXED = {
+  yahoo_domestic:'https://news.yahoo.co.jp/rss/topics/domestic.xml',
+  yahoo_entertainment:'https://news.yahoo.co.jp/rss/topics/entertainment.xml',
+  yahoo_sports:'https://news.yahoo.co.jp/rss/topics/sports.xml',
+  google_japan:'https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja',
+  google_entertainment:'https://news.google.com/rss/headlines/section/topic/ENTERTAINMENT?hl=ja&gl=JP&ceid=JP:ja',
+  google_business:'https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=ja&gl=JP&ceid=JP:ja',
+};
+
+test('RSS news sources are fixed, public and have no caller-defined query or key',()=>{
+  for(const source of Object.keys(FIXED)) assert(NEWS_SOURCE_IDS.includes(source));
+  const denied=['yahoo_private','google_search','shopping_paid','arbitrary_news'];
+  for(const source of denied) assert(!NEWS_SOURCE_IDS.includes(source));
+});
+
+test('fixed RSS goes through bounded, read-only gateway and preserves bytes',async()=>{
+  const calls=[];
+  const rss='<?xml version="1.0" encoding="UTF-8"?><rss><channel><item><title>イベント</title><link>https://example.org/event</link></item></channel></rss>';
+  const collector=createActivityAcquisition({
+    fetchImpl:async(url,opts)=>{
+      calls.push({url,opts});
+      assert.equal(opts.method,'GET');
+      assert.equal(opts.redirect,'manual');
+      assert.equal(opts.credentials,'omit');
+      assert.match(opts.headers.Accept,/rss\+xml/);
+      assert(!('Authorization' in opts.headers));
+      return new Response(rss,{headers:{'content-type':'application/rss+xml'}});
+    },
+    clock:()=>Date.parse('2026-11-08T00:00:00Z')
+  });
+  for(const source of Object.keys(FIXED)){
+    const packet=await collector.get(source);
+    assert.equal(packet.schema,'gateway.activity-raw/1');
+    assert.equal(packet.source,source);
+    assert.equal(packet.personalDataCollected,false);
+    assert.equal(Buffer.from(packet.data.body,'base64url').toString('utf8'),rss);
+    assert.equal(calls.at(-1).url,FIXED[source]);
+  }
+  assert.equal(calls.length,Object.keys(FIXED).length);
+  await assert.rejects(()=>collector.get('arbitrary_news'),/invalid-source/);
 });
