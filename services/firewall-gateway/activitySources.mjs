@@ -17,9 +17,40 @@ const ANILIST_URL='https://graphql.anilist.co/';
 const ANILIST_BODY=JSON.stringify({query:'query { Page(page:1,perPage:6) { media(type:ANIME,sort:TRENDING_DESC,isAdult:false) { id title { native romaji } siteUrl format nextAiringEpisode { airingAt episode } } } }'});
 const TTL=30*60_000;
 const MAX_BYTES=350_000;
+// Kawasaki official 100-record pages exceed the generic cap due to unneeded prose.
+// Only this fixed allowlisted source may be received up to 900k, then projected
+// to strictly bounded public fields before leaving Gateway.
+const KAWASAKI_INPUT_MAX_BYTES=900_000;
+const KAWASAKI_OUTPUT_MAX_BYTES=340_000;
 const HOUR=3_600_000;
 const day=ms=>new Date(ms+9*HOUR).toISOString().slice(0,10);
 const parseTime=x=>typeof x==='string'?Date.parse(x):NaN;
+
+const publicText=(value,max)=>typeof value==='string'?value.trim().slice(0,max):'';
+const publicCoord=value=>(typeof value==='number'&&Number.isFinite(value))||
+  (typeof value==='string'&&/^-?\d{1,3}(?:\.\d{1,12})?$/.test(value))?value:null;
+export function projectKawasakiEvent(row){
+  if(!row||typeof row!=='object'||Array.isArray(row))throw Error('invalid-kawasaki-row');
+  // Transport-layer field minimization only. Activity alone interprets times,
+  // categorizes events, validates locations and deduplicates the feed.
+  const date_list=Array.isArray(row.date_list)?row.date_list.slice(0,40)
+    .filter(x=>x&&typeof x==='object'&&!Array.isArray(x))
+    .map(x=>({date:publicText(x.date,18),time_from:publicText(x.time_from,12),
+      time_to:publicText(x.time_to,12)})):[];
+  const event_location=Array.isArray(row.event_location)?row.event_location.slice(0,8)
+    .filter(x=>x&&typeof x==='object'&&!Array.isArray(x))
+    .map(x=>({latitude:publicCoord(x.latitude),longitude:publicCoord(x.longitude),
+      place:publicText(x.place,120),venue_address:publicText(x.venue_address,240)})):[];
+  return {title:publicText(row.title,160),date_list,event_location,
+    place_lat:publicCoord(row.place_lat),place_lon:publicCoord(row.place_lon),
+    place:publicText(row.place,120),place_adr:publicText(row.place_adr,240),
+    open_url:publicText(row.open_url,500),
+    rel_list:Array.isArray(row.rel_list)?row.rel_list.slice(0,1)
+      .filter(x=>x&&typeof x==='object'&&!Array.isArray(x))
+      .map(x=>({rel_url:publicText(x.rel_url,500)})):[],
+    type1:publicText(row.type1,80),cost_ext:publicText(row.cost_ext,120)};
+}
+
 const validDay=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)
   &&Number.isFinite(Date.parse(value))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
 export function validateEventQuery(input,now=Date.now()){
@@ -32,7 +63,7 @@ export function validateEventQuery(input,now=Date.now()){
 }
 export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
   const cache=new Map(),pending=new Map(),cooldowns=new Map();
-  async function read(url,signal,{html=false,bytes=false,anilist=false}={}){
+  async function read(url,signal,{html=false,bytes=false,anilist=false,maxBytes=MAX_BYTES}={}){
     const u=new URL(url);
     if(u.protocol!=='https:'||u.username||u.password||
        !([HOSTS.swiss,HOSTS.fellowship,HOSTS.redlook,...Object.values(NEWS)].includes(u.href)||
@@ -61,9 +92,9 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
       throw error;
     }
     const declared=Number(response.headers?.get?.('content-length'));
-    if(Number.isFinite(declared)&&declared>MAX_BYTES)throw Error('upstream-too-large');
+    if(Number.isFinite(declared)&&declared>maxBytes)throw Error('upstream-too-large');
     const buf=await response.arrayBuffer();
-    if(buf.byteLength>MAX_BYTES)throw Error('upstream-too-large');
+    if(buf.byteLength>maxBytes)throw Error('upstream-too-large');
     if(u.href===NEWS.gdelt){
       // GDELT can return a throttle/usage notice as HTTP 200 text.
       // Reject and back off rather than caching malformed headlines.
@@ -132,15 +163,18 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
     const {from,to,page}=query;
     const url=new URL(KAWASAKI);
     url.search=new URLSearchParams({format:'JSON',page:String(page),from,to}).toString();
-    const raw=await read(url.href,signal);
+    const raw=await read(url.href,signal,{maxBytes:KAWASAKI_INPUT_MAX_BYTES});
     const totalPages=Number(raw?.total_pages);
     if(!Array.isArray(raw?.event_data)||raw.event_data.length>100||
        !Number.isInteger(totalPages)||totalPages<1||totalPages>3||
        page>totalPages||raw.event_data.some(row=>!row||typeof row!=='object'||Array.isArray(row)))
       throw Error('invalid-kawasaki-events');
     // Activity owns the multi-page merge, date/venue parsing and publication.
-    return {kawasaki:{event_data:raw.event_data,from,to,page,total_pages:totalPages},
-      providers:[{id:'kawasaki',state:'ok',count:raw.event_data.length}]};
+    const projected=raw.event_data.map(projectKawasakiEvent);
+    if(Buffer.byteLength(JSON.stringify(projected),'utf8')>KAWASAKI_OUTPUT_MAX_BYTES)
+      throw Error('kawasaki-projection-too-large');
+    return {kawasaki:{event_data:projected,from,to,page,total_pages:totalPages},
+      providers:[{id:'kawasaki',state:'ok',count:projected.length}]};
   }
   async function get(source,selector=null){
     if(!['tv','online','gdelt','mlit','events','anilist'].includes(source))throw Error('invalid-source');
