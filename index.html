@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Federation Runtime</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <main class="runtime-shell" aria-label="Federation Runtime layout">
+      <header class="runtime-header">
+        <div class="brand-lockup">
+          <span class="brand-orb" aria-hidden="true"></span>
+          <div>
+            <p class="eyebrow">Federation Runtime</p>
+            <h1>Operational Runtime Console</h1>
+          </div>
+        </div>
+        <nav class="header-nav" aria-label="Runtime views">
+          <a href="#knowledge-graph" aria-current="page">Graph</a>
+          <a href="#execution">Execution</a>
+          <a href="#runtime">Runtime</a>
+          <a href="#telemetry">Telemetry</a>
+        </nav>
+        <div class="runtime-status" aria-label="Runtime status">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span>layout preview</span>
+        </div>
+      </header>
+
+      <section class="hero-grid" aria-label="Federation graph overview">
+        <article class="panel graph-panel" id="knowledge-graph">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Obsidian Knowledge Graph</p>
+              <h2>Knowledge Surface</h2>
+            </div>
+            <span class="panel-chip">semantic</span>
+          </div>
+          <div class="knowledge-canvas" role="img" aria-label="Static Obsidian knowledge graph placeholder">
+            <span class="node node-core">Runtime</span>
+            <span class="node node-auth">Auth</span>
+            <span class="node node-routes">Routes</span>
+            <span class="node node-contracts">Contracts</span>
+            <span class="node node-events">Events</span>
+            <span class="node node-observability">Signals</span>
+            <span class="graph-line line-a"></span>
+            <span class="graph-line line-b"></span>
+            <span class="graph-line line-c"></span>
+            <span class="graph-line line-d"></span>
+            <span class="graph-line line-e"></span>
+          </div>
+        </article>
+
+        <article class="panel graph-panel runtime-graph" id="runtime-graph">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Runtime Federation Graph</p>
+              <h2>Federated Topology</h2>
+            </div>
+            <span class="panel-chip accent">runtime</span>
+          </div>
+          <div class="federation-map" role="img" aria-label="Static runtime federation graph placeholder">
+            <div class="runtime-node host">
+              <span>Host</span>
+              <small>shell</small>
+            </div>
+            <div class="remote-stack">
+              <span class="remote-card">Identity</span>
+              <span class="remote-card">Knowledge</span>
+              <span class="remote-card">Telemetry</span>
+              <span class="remote-card">Control</span>
+            </div>
+            <svg class="route-lines" viewBox="0 0 620 300" aria-hidden="true">
+              <path d="M156 150 C252 64 354 58 466 78" />
+              <path d="M156 150 C278 118 362 122 466 134" />
+              <path d="M156 150 C274 188 366 190 466 190" />
+              <path d="M156 150 C244 238 354 244 466 246" />
+            </svg>
+          </div>
+        </article>
+      </section>
+
+      <section class="operations-grid" aria-label="Runtime operation rows">
+        <article class="panel row-panel" id="execution">
+          <div class="row-title">
+            <p class="eyebrow">Execution row</p>
+            <h2>Invocation Flow</h2>
+          </div>
+          <div class="metric-strip">
+            <div class="metric-card emphasis">
+              <span>Queue</span>
+              <strong>ready</strong>
+              <small>dispatch lane</small>
+            </div>
+            <div class="metric-card">
+              <span>Resolver</span>
+              <strong>mapped</strong>
+              <small>route table</small>
+            </div>
+            <div class="metric-card">
+              <span>Hydration</span>
+              <strong>staged</strong>
+              <small>remote shell</small>
+            </div>
+            <div class="metric-card">
+              <span>Fallback</span>
+              <strong>armed</strong>
+              <small>safe boundary</small>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel row-panel" id="runtime">
+          <div class="row-title">
+            <p class="eyebrow">Runtime row</p>
+            <h2>Control Plane</h2>
+          </div>
+          <div class="metric-strip runtime-density">
+            <div class="metric-card">
+              <span>Manifest</span>
+              <strong>pinned</strong>
+              <small>version scope</small>
+            </div>
+            <div class="metric-card">
+              <span>Boundary</span>
+              <strong>sealed</strong>
+              <small>isolation</small>
+            </div>
+            <div class="metric-card">
+              <span>Remotes</span>
+              <strong>4 slots</strong>
+              <small>layout only</small>
+            </div>
+            <div class="metric-card">
+              <span>Policy</span>
+              <strong>passive</strong>
+              <small>not enforced</small>
+            </div>
+            <div class="metric-card">
+              <span>Cache</span>
+              <strong>warm</strong>
+              <small>visual state</small>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel row-panel telemetry-panel" id="telemetry">
+          <div class="row-title">
+            <p class="eyebrow">Telemetry row</p>
+            <h2>Signal Density</h2>
+          </div>
+          <div class="telemetry-grid" aria-label="Telemetry density placeholders">
+            <span><b>p95</b> --</span>
+            <span><b>cpu</b> --</span>
+            <span><b>mem</b> --</span>
+            <span><b>err</b> --</span>
+            <span><b>rps</b> --</span>
+            <span><b>ttl</b> --</span>
+            <span><b>lag</b> --</span>
+            <span><b>sat</b> --</span>
+            <span><b>edge</b> --</span>
+            <span><b>sync</b> --</span>
+            <span><b>trace</b> --</span>
+            <span><b>span</b> --</span>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
