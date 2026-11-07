@@ -20,6 +20,16 @@ const MAX_BYTES=350_000;
 const HOUR=3_600_000;
 const day=ms=>new Date(ms+9*HOUR).toISOString().slice(0,10);
 const parseTime=x=>typeof x==='string'?Date.parse(x):NaN;
+const validDay=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)
+  &&Number.isFinite(Date.parse(value))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
+export function validateEventQuery(input,now=Date.now()){
+  if(!input||typeof input!=='object'||Array.isArray(input))return null;
+  const {from,to,page}=input;
+  if(!validDay(from)||!validDay(to)||!Number.isInteger(page)||page<1||page>3)return null;
+  const today=day(now), earliest=day(now-7*24*HOUR),latest=day(now+45*24*HOUR);
+  if(from<earliest||to>latest||to<from||(Date.parse(to)-Date.parse(from))/86400000>45)return null;
+  return {from,to,page};
+}
 export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
   const cache=new Map(),pending=new Map(),cooldowns=new Map();
   async function read(url,signal,{html=false,bytes=false,anilist=false}={}){
@@ -34,7 +44,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
            u.pathname==='/data/api/v1/events'&&
            [...u.searchParams.keys()].sort().join(',')==='format,from,page,to'&&
            u.searchParams.get('format')==='JSON'&&
-           u.searchParams.get('page')==='1'&&
+           /^[1-3]$/.test(u.searchParams.get('page')||'')&&
            /^\d{4}-\d{2}-\d{2}$/.test(u.searchParams.get('from')||'')&&
            /^\d{4}-\d{2}-\d{2}$/.test(u.searchParams.get('to')||'')
          ))throw Error('upstream-not-allowed');
@@ -116,40 +126,49 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
     const redlook=responses[2].status==='fulfilled'?String(responses[2].value).slice(0,24000):'';
     return {swiss,fellowship,redlook,providers};
   }
-  async function events(signal){
-    // Server-clock bounded public date window. No caller dates, URL or identity.
-    const from=day(clock()),to=day(clock()+14*24*HOUR);
+  async function events(signal,query){
+    // Only a server-validated public date window and bounded page number.
+    // No user identity, coordinates, arbitrary URL, credentials or custom filters.
+    const {from,to,page}=query;
     const url=new URL(KAWASAKI);
-    url.search=new URLSearchParams({format:'JSON',page:'1',from,to}).toString();
+    url.search=new URLSearchParams({format:'JSON',page:String(page),from,to}).toString();
     const raw=await read(url.href,signal);
-    if(!Array.isArray(raw?.event_data)||raw.event_data.length>100)
+    const totalPages=Number(raw?.total_pages);
+    if(!Array.isArray(raw?.event_data)||raw.event_data.length>100||
+       !Number.isInteger(totalPages)||totalPages<1||totalPages>3||
+       page>totalPages||raw.event_data.some(row=>!row||typeof row!=='object'||Array.isArray(row)))
       throw Error('invalid-kawasaki-events');
-    // Activity handles date/location parsing, provenance and publication.
-    return {kawasaki:{event_data:raw.event_data,from,to},
+    // Activity owns the multi-page merge, date/venue parsing and publication.
+    return {kawasaki:{event_data:raw.event_data,from,to,page,total_pages:totalPages},
       providers:[{id:'kawasaki',state:'ok',count:raw.event_data.length}]};
   }
-  async function get(source){
+  async function get(source,selector=null){
     if(!['tv','online','gdelt','mlit','events','anilist'].includes(source))throw Error('invalid-source');
-    const now=clock(),hit=cache.get(source);
+    const now=clock();
+    const query=source==='events'
+      ?validateEventQuery(selector??{from:day(now),to:day(now+14*24*HOUR),page:1},now):null;
+    if(source==='events'&&!query)throw Error('invalid-event-query');
+    const key=query?['events',query.from,query.to,query.page].join(':'):source;
+    const hit=cache.get(key);
     if(hit&&now<hit.until)return {...hit.value,cached:true};
-    if(pending.has(source))return pending.get(source);
-    if(now<(cooldowns.get(source)||0))throw Error('upstream-cooldown');
+    if(pending.has(key))return pending.get(key);
+    if(now<(cooldowns.get(key)||0))throw Error('upstream-cooldown');
     const promise=(async()=>{
       const controller=new AbortController();
       const timer=setTimeout(()=>controller.abort(),18000);
       try{
         const data=source==='tv'?await tv(controller.signal):source==='online'?await online(controller.signal)
-          :source==='events'?await events(controller.signal)
+          :source==='events'?await events(controller.signal,query)
           :source==='anilist'?{data:await read(ANILIST_URL,controller.signal,{bytes:true,anilist:true})}
           : {data:await read(NEWS[source],controller.signal,{bytes:true})};
         const value={schema:'gateway.activity-raw/1',source,fetchedAt:new Date(clock()).toISOString(),
           personalDataCollected:false,...data};
-        cache.set(source,{until:clock()+TTL,value});cooldowns.delete(source);
+        cache.set(key,{until:clock()+TTL,value});cooldowns.delete(key);
         return value;
-      }catch(e){cooldowns.set(source,clock()+((source==='anilist'||source==='gdelt')&&Number.isFinite(e.cooldownMs)?e.cooldownMs:source==='gdelt'?15*60_000:60_000));throw e;}
+      }catch(e){cooldowns.set(key,clock()+((source==='anilist'||source==='gdelt')&&Number.isFinite(e.cooldownMs)?e.cooldownMs:source==='gdelt'?15*60_000:60_000));throw e;}
       finally{clearTimeout(timer);}
-    })().finally(()=>pending.delete(source));
-    pending.set(source,promise);
+    })().finally(()=>pending.delete(key));
+    pending.set(key,promise);
     return promise;
   }
   return {get};
