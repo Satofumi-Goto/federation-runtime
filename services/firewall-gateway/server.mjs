@@ -110,6 +110,12 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  const eventAuth=createAuthenticator({env:{
    FIREWALL_CLIENT_KEYS_JSON:eventKey?JSON.stringify({activity:eventKey}):''
  },clock});
+ // Additional key for the two fixed Tokyo public datasets ONLY. The existing
+ // event key is retained unchanged for Kawasaki/other signed consumers.
+ const tokyoKey=env.FIREWALL_ACTIVITY_TOKYO_SHADOW_KEY||'';
+ const tokyoAuth=createAuthenticator({env:{
+   FIREWALL_CLIENT_KEYS_JSON:tokyoKey?JSON.stringify({activity:tokyoKey}):''
+ },clock});
  const access=createAccessVerifier({env,fetchImpl,clock});
  const egress=createEgress({env,fetchImpl,clock});
  const activityAcquisition=createActivityAcquisition({fetchImpl,clock});
@@ -290,7 +296,13 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       (kawasakiSource?!eventQuery:keys!=='source'))
       return reply(res,400,{ok:false,reason:'unsupported-command'});
     const newsSource=command.source==='gdelt'||command.source==='mlit';
-    const identity=(eventSource?eventAuth:newsSource?newsAuth:sourceAuth).verify(req,body,path);
+    // The Tokyo-only staging key is an ADDITIONAL, isolated credential, never
+    // a replacement or authorization for Kawasaki, TV, news or any user data.
+    let identity=(eventSource?eventAuth:newsSource?newsAuth:sourceAuth).verify(req,body,path);
+    const tokyoSource=eventSource&&!kawasakiSource;
+    if(!identity.ok&&tokyoSource&&tokyoAuth.configured&&
+       ['service-auth-unconfigured','signature-invalid'].includes(identity.reason))
+      identity=tokyoAuth.verify(req,body,path);
     if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
     if(identity.client!=='activity')return reply(res,403,{ok:false,reason:'activity-only'});
     if(!activitySourcesEnabled)return reply(res,503,{ok:false,reason:'activity-egress-disabled'});
