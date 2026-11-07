@@ -6,7 +6,7 @@ import {readFileSync} from 'node:fs';
 import {createAuthenticator} from './auth.mjs';
 import {createAccessVerifier} from './access.mjs';
 import {createEgress} from './egress.mjs';
-import {createActivityAcquisition} from './activitySources.mjs';
+import {createActivityAcquisition,validateEventQuery} from './activitySources.mjs';
 import {createGithubCanaryVerifier} from './githubCanary.mjs';
 import {createAssistant,parseAssistantCommand,ASSISTANT_PATH,ASSISTANT_MAX_BODY,ASSISTANT_POLICY} from './assistant.mjs';
 import {publicCatalog,publicClients,SIGNING_CONTRACT} from './policy.mjs';
@@ -269,13 +269,19 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
       return reply(res,415,{ok:false,reason:'json-required'});
     let body;
-    try{body=await limitedBody(req,64);}
+    try{body=await limitedBody(req,128);}
     catch{return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});}
     let command;
     try{command=JSON.parse(body);}
     catch{return reply(res,400,{ok:false,reason:'invalid-json'});}
+    const eventSource=command?.source==='events';
+    const keys=command&&typeof command==='object'&&!Array.isArray(command)
+      ?Object.keys(command).sort().join(','):'';
+    const eventQuery=eventSource&&keys==='from,page,source,to'
+      ?validateEventQuery(command,clock()):null;
     if(!command||typeof command!=='object'||Array.isArray(command)||
-      Object.keys(command).length!==1||!['tv','online','gdelt','mlit','events','anilist'].includes(command.source))
+      !['tv','online','gdelt','mlit','events','anilist'].includes(command.source)||
+      (eventSource?!eventQuery:keys!=='source'))
       return reply(res,400,{ok:false,reason:'unsupported-command'});
     const newsSource=command.source==='gdelt'||command.source==='mlit';
     const identity=(newsSource?newsAuth:sourceAuth).verify(req,body,path);
@@ -289,7 +295,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       shared.retryAfterSeconds?{'Retry-After':String(shared.retryAfterSeconds)}:{});
     signedClients.add('activity');
     try{
-      return reply(res,200,{ok:true,...await activityAcquisition.get(command.source)});
+      return reply(res,200,{ok:true,...await activityAcquisition.get(command.source,eventQuery)});
     }catch{
       return reply(res,503,{ok:false,reason:'activity-upstream-unavailable'});
     }
