@@ -7,6 +7,10 @@ const HOSTS=Object.freeze({
 });
 const TV='https://api.tvmaze.com';
 const KAWASAKI='https://eventapp.city.kawasaki.jp/data/api/v1/events';
+const TOKYO_EVENT_URLS=Object.freeze({
+  tokyo_koto_events:'https://service.api.metro.tokyo.lg.jp/api/t131083d0000000017-252a3033bb76c746c8ee30c24a3a2b5a-0/json?limit=250',
+  tokyo_sumida_events:'https://service.api.metro.tokyo.lg.jp/api/t131075d0000000136-d97c9fdbf7d4a3ad38c0cac25c78beb3-0/json?limit=250',
+});
 // Only two fixed, keyless headline providers. No caller URL, topic or location.
 const NEWS=Object.freeze({
   gdelt:'https://api.gdeltproject.org/api/v2/doc/doc?query='+encodeURIComponent('"electric vehicle"')+'&mode=artlist&maxrecords=6&timespan=12h&sort=datedesc&format=json',
@@ -22,6 +26,8 @@ const MAX_BYTES=350_000;
 // to strictly bounded public fields before leaving Gateway.
 const KAWASAKI_INPUT_MAX_BYTES=900_000;
 const KAWASAKI_OUTPUT_MAX_BYTES=340_000;
+const TOKYO_INPUT_MAX_BYTES=1_400_000;
+const TOKYO_OUTPUT_MAX_BYTES=340_000;
 const HOUR=3_600_000;
 const day=ms=>new Date(ms+9*HOUR).toISOString().slice(0,10);
 const parseTime=x=>typeof x==='string'?Date.parse(x):NaN;
@@ -29,6 +35,29 @@ const parseTime=x=>typeof x==='string'?Date.parse(x):NaN;
 const publicText=(value,max)=>typeof value==='string'?value.trim().slice(0,max):'';
 const publicCoord=value=>(typeof value==='number'&&Number.isFinite(value))||
   (typeof value==='string'&&/^-?\d{1,3}(?:\.\d{1,12})?$/.test(value))?value:null;
+// Transport-only public field projection: Activity owns locale/date parsing.
+const TOKYO_PUBLIC_FIELDS=Object.freeze([
+  'イベント名','イベント名称','名称','行事名','title',
+  '開始日','開催日','開催年月日','イベント開始日','開催開始日',
+  '終了日','開催終了日','イベント終了日','開始時間','開催開始時間',
+  '終了時間','開催終了時間','緯度','開催場所_緯度','施設緯度','latitude',
+  '経度','開催場所_経度','施設経度','longitude',
+  '場所名称','開催場所','開催場所名称','施設名',
+  '住所','開催場所住所','開催地住所','URL','ホームページ','関連URL','イベントURL',
+  'イベント種類','ジャンル','分類','料金（基本）','料金(基本)','参加費','料金'
+]);
+export function projectTokyoEventHit(hit){
+  if(!hit||typeof hit!=='object'||Array.isArray(hit))throw Error('invalid-tokyo-hit');
+  const row=hit._source&&typeof hit._source==='object'&&!Array.isArray(hit._source)
+    ?hit._source:hit;
+  const cleaned={};
+  for(const field of TOKYO_PUBLIC_FIELDS){
+    const value=row[field];
+    if(typeof value==='string')cleaned[field]=value.slice(0,300);
+    else if(typeof value==='number'&&Number.isFinite(value))cleaned[field]=value;
+  }
+  return {_source:cleaned};
+}
 export function projectKawasakiEvent(row){
   if(!row||typeof row!=='object'||Array.isArray(row))throw Error('invalid-kawasaki-row');
   // Transport-layer field minimization only. Activity alone interprets times,
@@ -64,11 +93,12 @@ export function validateEventQuery(input,now=Date.now()){
 export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
   const cache=new Map(),pending=new Map(),cooldowns=new Map();
   let gdeltThrottleStreak=0;
-  async function read(url,signal,{html=false,bytes=false,anilist=false,maxBytes=MAX_BYTES}={}){
+  async function read(url,signal,{html=false,bytes=false,anilist=false,tokyo=false,maxBytes=MAX_BYTES}={}){
     const u=new URL(url);
     if(u.protocol!=='https:'||u.username||u.password||
        !([HOSTS.swiss,HOSTS.fellowship,HOSTS.redlook,...Object.values(NEWS)].includes(u.href)||
          anilist&&u.href===ANILIST_URL||
+         tokyo&&Object.values(TOKYO_EVENT_URLS).includes(u.href)||
          u.hostname==='api.tvmaze.com'&&(
            /^\/schedule$/.test(u.pathname)&&/^country=JP&date=\d{4}-\d{2}-\d{2}$/.test(u.search.slice(1))||
            /^\/(?:episodes|shows)\/[0-9]+\/(?:guestcast|cast)$/.test(u.pathname)&&!u.search
@@ -80,9 +110,9 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
            /^\d{4}-\d{2}-\d{2}$/.test(u.searchParams.get('from')||'')&&
            /^\d{4}-\d{2}-\d{2}$/.test(u.searchParams.get('to')||'')
          ))throw Error('upstream-not-allowed');
-    const response=await fetchImpl(u.href,{method:anilist?'POST':'GET',redirect:'manual',credentials:'omit',
-      headers:{Accept:html?'text/html':'application/json',...(anilist?{'Content-Type':'application/json'}:{})},
-      ...(anilist?{body:ANILIST_BODY}:{}),signal});
+    const response=await fetchImpl(u.href,{method:anilist||tokyo?'POST':'GET',redirect:'manual',credentials:'omit',
+      headers:{Accept:html?'text/html':'application/json',...((anilist||tokyo)?{'Content-Type':'application/json'}:{})},
+      ...(anilist?{body:ANILIST_BODY}:tokyo?{body:'{}'}:{}),signal});
     if(!response.ok||response.status>=300&&response.status<400){
       const error=new Error('upstream-unavailable');
       if((anilist||u.href===NEWS.gdelt)&&response.status===429){
@@ -185,8 +215,20 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
     return {kawasaki:{event_data:projected,from,to,page,total_pages:totalPages},
       providers:[{id:'kawasaki',state:'ok',count:projected.length}]};
   }
+  async function tokyoEvents(source,signal){
+    // Two fixed Tokyo open-data datasets, no caller-provided URL or filters.
+    const raw=await read(TOKYO_EVENT_URLS[source],signal,
+      {tokyo:true,maxBytes:TOKYO_INPUT_MAX_BYTES});
+    if(!Array.isArray(raw?.hits)||raw.hits.length>250)
+      throw Error('invalid-tokyo-events');
+    const hits=raw.hits.map(projectTokyoEventHit);
+    if(Buffer.byteLength(JSON.stringify(hits),'utf8')>TOKYO_OUTPUT_MAX_BYTES)
+      throw Error('tokyo-projection-too-large');
+    return {tokyo:{datasetId:source.replace(/_events$/,''),hits,complete:true},
+      providers:[{id:source.replace(/_events$/,''),state:'ok',count:hits.length}]};
+  }
   async function get(source,selector=null){
-    if(!['tv','online','gdelt','mlit','events','anilist'].includes(source))throw Error('invalid-source');
+    if(!['tv','online','gdelt','mlit','events','anilist','tokyo_koto_events','tokyo_sumida_events'].includes(source))throw Error('invalid-source');
     const now=clock();
     const query=source==='events'
       ?validateEventQuery(selector??{from:day(now),to:day(now+14*24*HOUR),page:1},now):null;
@@ -202,6 +244,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
       try{
         const data=source==='tv'?await tv(controller.signal):source==='online'?await online(controller.signal)
           :source==='events'?await events(controller.signal,query)
+          :TOKYO_EVENT_URLS[source]?await tokyoEvents(source,controller.signal)
           :source==='anilist'?{data:await read(ANILIST_URL,controller.signal,{bytes:true,anilist:true})}
           : {data:await read(NEWS[source],controller.signal,{bytes:true})};
         const value={schema:'gateway.activity-raw/1',source,fetchedAt:new Date(clock()).toISOString(),

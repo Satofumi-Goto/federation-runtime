@@ -48,7 +48,8 @@
         "poiSupplementElevation",
         "poiSupplementGeoapify",
         "poiSupplementWalking",
-        "bodikPublicFacilities"
+        "bodikPublicFacilities",
+        "keyvoxLockerStatus"
       ]
     },
     {
@@ -96,7 +97,8 @@
         "openChargeMap",
         "parkingOperators",
         "odptRailBus",
-        "gtfsJpOperatorFeeds"
+        "gtfsJpOperatorFeeds",
+        "okinawaPublicParking"
       ]
     },
     {
@@ -1124,6 +1126,34 @@
       "evidence": null,
       "candidate": "開発環境のトイレ6件・AED6件を確認。本番配備・公開画面は未検証。CC BY/CC0のみ表示",
       "requiredKeys": []
+    },
+    {
+      "id": "okinawaPublicParking",
+      "name": "沖縄県の公営駐車場（登録料金）",
+      "basis": "registered",
+      "primary": "Seneschal searchExternalPoi → 沖縄県BODIK CKAN API（固定公営駐車場リソース）",
+      "secondary": null,
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "開発環境で3施設の料金・上限・台数を取得。2km内・CC BY 4.0を照合。本番は未確認",
+      "requiredKeys": []
+    },
+    {
+      "id": "keyvoxLockerStatus",
+      "name": "KEYVOX ロッカー利用状況",
+      "basis": "observed",
+      "primary": "Seneschal searchExternalPoi → KEYVOX getLockerStatus（公開許可済み施設のみ）",
+      "secondary": null,
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "署名付き読み取りアダプター。APIキー・Secret・公開許可済み施設設定なし。本番実通信は未確認",
+      "requiredKeys": [
+        "KEYVOX_API_KEY",
+        "KEYVOX_API_SECRET",
+        "KEYVOX_PUBLIC_LOCKERS_JSON"
+      ]
     }
   ]
 }
