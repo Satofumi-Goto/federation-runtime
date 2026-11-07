@@ -2,16 +2,6 @@
 
 既存の Seneschal / 活動 / Fleet / Urban / Service / Federation / Simulator の外部API通信を維持したまま、独立した外部APIセキュリティ基盤を追加する。
 
-## 仮予定レコメンド情報源の責務（2026-11-07 ユーザー確定）
-
-**目標構成:** 外部Provider → **Firewall Gateway（外部APIへの新規接続、鍵・認証・費用・通信制限）** → **活動コンソール**（`Satofumi-Goto/life-transaction-console`：元データを加工・重複排除・分類・出典/鮮度付与・公開フィード作成） → **Seneschal**（読み取り専用で受信、個人の予定/好み/移動条件との照合、未保存の仮予定として表示）。
-
-- イベント、自治体行事、グルメ、旅行、天気等の**新規レコメンド向け外部APIルートはGatewayが唯一の外向き通信担当**。Activityに新規provider direct-fetchやAPIキーを追加しない。Seneschalにも新規provider直結を追加しない。
-- GatewayからActivityへの返却は `routeId`, `provider`, `sourceUrl`, `fetchedAt`, `data` などの**出典つき取得結果**。Gatewayはユーザーの個人予定・嗜好の正本を保持しない。Activityは元データをサービス向けに正規化し、Seneschalには加工済み公開データだけを返す。
-- 新規providerルートは固定URL allowlist、サーバー間HMAC、ライセンス/商用条件、秘密鍵の登録、最小権限、応答サイズ・TTL・レート/費用上限・監査と明示的承認が必要。未承認・キー未設定・契約なしはfail closed。画面に表示される候補名を接続証拠と取り違えない。
-- **現状は `config/firewall-gateway-migration.json` の `shadow-hold` が正本**で、既存のレガシー直fetchは移行検証前に削除・置換しない。Gatewayが既に外部APIを本番仲介しているとは主張しない。
-- 元のデータ取得経路とUIへの提供ルートの権限は区別する。Gatewayの本番切替には署名E2E、提供元レスポンスとのデータ一致、ロールバック、安定運用、個人情報境界、実画面検証と別PR承認を必須とする。既存のGoogle Maps/Places、個人カレンダー、配車・決済等の**直接接続の明示例外**はそのまま維持する。
-
 ## 境界
 - **個別アプリが業務とデータの正本を保有**。Firewall は HTTPS 通信の許可・制限・監査統制を担当し、活動コンソールを汎用Firewallにしない。
 - **現在は Shadow HOLD**。一切の既存URL、Google Maps、個人カレンダー、配車、APIキー、本番writeを切り替えない。利用アプリからの自動転送・課金・登録変更・フォールバックも行わない。
