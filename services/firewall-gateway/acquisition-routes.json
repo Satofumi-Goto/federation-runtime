@@ -125,6 +125,19 @@
         "ticketmaster_event",
         "odpRegionalFeeds"
       ]
+    },
+    {
+      "id": "news",
+      "label": "ニュース",
+      "description": "一般・経済・モビリティ・交通政策の原典リンク",
+      "ids": [
+        "gdeltNews",
+        "mlitNews",
+        "gnewsNews",
+        "newsdataNews",
+        "guardianNews",
+        "newsApiNews"
+      ]
     }
   ],
   "routes": [
@@ -885,6 +898,78 @@
       "verifiedAt": null,
       "evidence": null,
       "candidate": "Gateway経路候補。Shadow HOLD／提供元ライセンス・認証・実通信未検証。既存通信は切替禁止。",
+      "requiredKeys": []
+    },
+    {
+      "id": "gdeltNews",
+      "name": "GDELT DOC 2.0 世界ニュース",
+      "basis": "registered",
+      "primary": null,
+      "secondary": "活動コンソール activityInterests（GDELT固定検索）→ Federation共有レコード → Seneschal",
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "Activity収集処理はPR #226、実通信・本番経路・Gateway cutover未検証。Shadow HOLD。",
+      "requiredKeys": []
+    },
+    {
+      "id": "mlitNews",
+      "name": "国土交通省 プレスリリースRSS",
+      "basis": "registered",
+      "primary": null,
+      "secondary": "活動コンソール activityInterests（国交省RSS）→ Federation共有レコード → Seneschal",
+      "state": "未確認",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "Activity収集処理はPR #226、実通信・本番経路・Gateway cutover未検証。Shadow HOLD。",
+      "requiredKeys": []
+    },
+    {
+      "id": "gnewsNews",
+      "name": "GNews API",
+      "basis": "registered",
+      "primary": null,
+      "secondary": null,
+      "state": "接続なし",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "非商用無料枠とAPIキーが必要。契約・本番接続・再配布権限未検証。",
+      "requiredKeys": []
+    },
+    {
+      "id": "newsdataNews",
+      "name": "NewsData.io",
+      "basis": "registered",
+      "primary": null,
+      "secondary": null,
+      "state": "接続なし",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "APIキーとデータ利用条件が必要。契約・本番接続・再配布権限未検証。",
+      "requiredKeys": []
+    },
+    {
+      "id": "guardianNews",
+      "name": "The Guardian Open Platform",
+      "basis": "registered",
+      "primary": null,
+      "secondary": null,
+      "state": "接続なし",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "非商用APIキーと本番利用条件を要確認。実接続なし。",
+      "requiredKeys": []
+    },
+    {
+      "id": "newsApiNews",
+      "name": "NewsAPI.org",
+      "basis": "registered",
+      "primary": null,
+      "secondary": null,
+      "state": "接続なし",
+      "verifiedAt": null,
+      "evidence": null,
+      "candidate": "無料Developerプランは本番公開不可。本番用の契約なし。",
       "requiredKeys": []
     }
   ]
