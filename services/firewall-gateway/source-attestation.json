@@ -1,7 +1,7 @@
 {
   "schema": "federation.firewall-source-attestation/1",
   "canonicalRepository": "Satofumi-Goto/federation-portal",
-  "canonicalCommit": "c97e9d74198df7f51a8642c3b1ee0c4c6fe28472",
+  "canonicalCommit": "8b649443197a465cd221e9adc2dbb0791ca58156",
   "sourcePath": "services/firewall-gateway",
   "distributionRepository": "Satofumi-Goto/federation-runtime",
   "verification": "full-file-Git-blob-sha1",
@@ -9,7 +9,7 @@
     "access.mjs": "cbf067127a3c7884057d91f2fc4ba1f5a4be3898",
     "acquisition-routes.json": "7801a4991cb5efc1f03f2171353802f68bab3651",
     "acquisitionLedger.mjs": "c6c8013ec54d52c017fdf581f7d17ebbc8e3a2d1",
-    "activitySources.mjs": "d3dbf2d18b206af6c91a2bd543155cff330038c0",
+    "activitySources.mjs": "92395a0ce51cdd8ea13c4b3a7b2c5064d3565c27",
     "amenityCandidates.mjs": "46f327398646d470f57caf78a55a62dc7d42dfe5",
     "assistant.mjs": "e53dea00f43b0484992d3f466ea677cd80858430",
     "auth.mjs": "d07ce12fbd27a4a1519322e444056ed1ed440051",
@@ -22,7 +22,7 @@
     "policy.mjs": "723ddcca9a7d6b01dc28755921a347c4fbb44071",
     "README.md": "3d0685029a8c3ab1c5e89dc1b97eb6b916701f85",
     "renderValkey.mjs": "419f40966f97a3541a79448d6ac47a56bdbeb2ff",
-    "server.mjs": "cd2b00c173b6948eb59eb9898f6526845c6d1b8c",
+    "server.mjs": "ff05c3c95e02b2780d0d9decdd306280f89fd33e",
     "store.mjs": "04044635aafd460655ac761f89c2786b00776c8d",
     "test/acquisition-ledger.test.mjs": "dd65eae696fc969a33868f993d358f4106bba37e",
     "test/activity-acquisition.test.mjs": "3f7e8c00c977ace380850755419d19f26f830dab",
@@ -43,7 +43,8 @@
     "test/store.test.mjs": "bbcd7ec368317c4637404cfb027aac9ef1b6b21f",
     "test/ui-csp.test.mjs": "03ea0b110330ec29e4f11058762ba0b9ff6dc27d",
     "tools/edge-negative-check.mjs": "74b07a7a411633ee04484d7739b39bea746e5042",
-    "ui.mjs": "b85fd453aad97a347b6d8d82bfa24b54fb220e90"
+    "ui.mjs": "b85fd453aad97a347b6d8d82bfa24b54fb220e90",
+    "test/activity-event-acquisition.test.mjs": "15011ce61500185bfb404e3bf3aa5ee78d25708e"
   },
   "supportingFiles": {
     "config/firewall-gateway-migration.json": "d2decb960e092cdb5b4525fa4463e58a526b0d54"
