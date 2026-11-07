@@ -4,9 +4,10 @@ import {randomBytes} from 'node:crypto';
 import {createGatewayServer} from '../server.mjs';
 import {signHeaders} from '../auth.mjs';
 const NOW=Date.parse('2026-11-07T00:00:00.000Z'),PATH='/api/v1/activity/acquire';
-const KEY=randomBytes(32);
+const KEY=randomBytes(32),NEWS_KEY=randomBytes(32);
 const config=(flags={})=>({FIREWALL_CLIENT_KEYS_JSON:JSON.stringify({activity:KEY.toString('base64url')}),
- FIREWALL_ACTIVITY_ACQUISITION_KEY:KEY.toString('base64url'),...flags});
+ FIREWALL_ACTIVITY_ACQUISITION_KEY:KEY.toString('base64url'),
+ FIREWALL_ACTIVITY_NEWS_KEY:NEWS_KEY.toString('base64url'),...flags});
 async function serve(env,fetchImpl,fn){
  const app=createGatewayServer({env,clock:()=>NOW,fetchImpl,auditSink:()=>{}});
  await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
@@ -15,7 +16,8 @@ async function serve(env,fetchImpl,fn){
 }
 async function request(base,source='online',extra={}){
  const body=JSON.stringify({source});
- const headers={'content-type':'application/json',...signHeaders({client:'activity',key:KEY,body,path:PATH,time:NOW}),...extra};
+ const key=['gdelt','mlit'].includes(source)?NEWS_KEY:KEY;
+ const headers={'content-type':'application/json',...signHeaders({client:'activity',key,body,path:PATH,time:NOW}),...extra};
  const r=await fetch(base+PATH,{method:'POST',headers,body});
  return {status:r.status,data:await r.json()};
 }
@@ -123,6 +125,28 @@ test('news providers are fixed gateway-owned URLs, signed Activity-only, bytes b
 test('news gateway denies unconfigured egress and never fetches provider directly',async()=>{
  let calls=0;
  await serve(config(),async()=>{calls++;throw Error('no egress');},async url=>{
+   assert.equal((await request(url,'mlit')).status,503);
+   assert.equal((await request(url,'gdelt')).status,503);
+   assert.equal(calls,0);
+ });
+});
+
+test('news-specific HMAC cannot be replaced with existing acquisition key, TV never accepts news key',async()=>{
+ const provider=async url=>new Response('{"articles":[]}',{headers:{'content-type':'application/json'}});
+ await serve(config({FIREWALL_ACTIVITY_SOURCES_ENABLED:'true'}),provider,async url=>{
+  const gdelt='{"source":"gdelt"}',tv='{"source":"tv"}';
+  const wrongNews=await fetch(url+PATH,{method:'POST',headers:{'content-type':'application/json',
+    ...signHeaders({client:'activity',key:KEY,body:gdelt,path:PATH,time:NOW})},body:gdelt});
+  assert.equal(wrongNews.status,401);
+  const wrongTv=await fetch(url+PATH,{method:'POST',headers:{'content-type':'application/json',
+    ...signHeaders({client:'activity',key:NEWS_KEY,body:tv,path:PATH,time:NOW})},body:tv});
+  assert.equal(wrongTv.status,401);
+ });
+});
+test('missing news-only credential refuses all news even if old TV key is configured',async()=>{
+ let calls=0;
+ await serve(config({FIREWALL_ACTIVITY_SOURCES_ENABLED:'true',FIREWALL_ACTIVITY_NEWS_KEY:''}),
+   async()=>{calls++;throw Error('no egress');},async url=>{
    assert.equal((await request(url,'mlit')).status,503);
    assert.equal((await request(url,'gdelt')).status,503);
    assert.equal(calls,0);
