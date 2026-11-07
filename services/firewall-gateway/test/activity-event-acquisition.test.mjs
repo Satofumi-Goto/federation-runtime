@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createActivityAcquisition,validateEventQuery} from '../activitySources.mjs';
+import {createActivityAcquisition,validateEventQuery,projectKawasakiEvent} from '../activitySources.mjs';
 
 const NOW=Date.parse('2026-11-07T03:00:00Z');
 const event={title:'地域イベント',date_list:[{date:'2026-11-14',time_from:'10:00',time_to:'11:00'}],
@@ -90,4 +90,50 @@ test('Gateway distinguishes pages and does not reuse page 1 cache for page 2',as
 test('Gateway refuses reported provider pagination >3 rather than claiming completeness',async()=>{
  const source=createActivityAcquisition({clock:()=>NOW,fetchImpl:async()=>ok({event_data:[event],total_pages:5})});
  await assert.rejects(()=>source.get('events'),/invalid-kawasaki-events/);
+});
+
+test('oversized official JSON prose is accepted only for Kawasaki and excluded from Activity packet',async()=>{
+ const notes='公開イベントの詳細'.repeat(26000);
+ const raw={...event,content:notes,internal_contact:'test@example.org',
+   place:'施設A',place_adr:'川崎市',open_url:'https://www.city.kawasaki.jp/',
+   date_list:[{date:'2026-11-14',time_from:'10:00',time_to:'11:00'}]};
+ const payload=JSON.stringify({total_pages:1,event_data:[raw]});
+ assert(Buffer.byteLength(payload,'utf8')>350000);
+ assert(Buffer.byteLength(payload,'utf8')<900000);
+ let requests=0;
+ const source=createActivityAcquisition({clock:()=>NOW,fetchImpl:async(_,init)=>{
+   requests++;
+   assert.equal(init.method,'GET');
+   return ok({total_pages:1,event_data:[raw]});
+ }});
+ const result=await source.get('events');
+ assert.equal(requests,1);
+ assert.equal(result.kawasaki.event_data[0].place,'施設A');
+ assert.equal(result.kawasaki.event_data[0].content,undefined);
+ assert.equal(result.kawasaki.event_data[0].internal_contact,undefined);
+ assert.equal(result.kawasaki.event_data[0].open_url,'https://www.city.kawasaki.jp/');
+ assert(Buffer.byteLength(JSON.stringify(result),'utf8')<340000);
+});
+test('bounded public field transport preserves only normalizer inputs and no personal data',()=>{
+ const projected=projectKawasakiEvent({...event,
+  content:'private prose',email:'private@example.org',
+  date_list:[{date:'2026-11-14',time_from:'10:00',time_to:'11:00'}],
+  event_location:[{latitude:35.6,longitude:139.6,place:'Hall',venue_address:'Street',contact:'hidden'}]});
+ assert.equal(projected.content,undefined);
+ assert.equal(projected.email,undefined);
+ assert.equal(projected.date_list[0].date,'2026-11-14');
+ assert.equal(projected.event_location[0].place,'Hall');
+ assert.equal(projected.event_location[0].contact,undefined);
+});
+test('Kawasaki payload above fixed 900KB is rejected without page fallback or synthetic output',async()=>{
+ const tooLarge={...event,content:'文'.repeat(310000)};
+ const body=JSON.stringify({total_pages:1,event_data:[tooLarge]});
+ assert(Buffer.byteLength(body,'utf8')>900000);
+ let calls=0;
+ const source=createActivityAcquisition({clock:()=>NOW,fetchImpl:async()=>{
+  calls++;
+  return new Response(body,{status:200,headers:{'content-type':'application/json'}});
+ }});
+ await assert.rejects(()=>source.get('events'),/upstream-too-large/);
+ assert.equal(calls,1);
 });
