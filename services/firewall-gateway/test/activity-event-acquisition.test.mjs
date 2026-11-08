@@ -224,13 +224,14 @@ test('fixed RSS goes through bounded, read-only gateway and preserves bytes',asy
   await assert.rejects(()=>collector.get('arbitrary_news'),/invalid-source/);
 });
 
-test('Tokyo: Koto, Sumida, Itabashi, Bunkyo and Chuo are fixed POST-only CC BY datasets',async()=>{
+test('Tokyo: five wards and Big Sight are fixed POST-only CC BY datasets',async()=>{
  const expected={
    tokyo_koto_events:'t131083d0000000017-252a3033bb76c746c8ee30c24a3a2b5a-0',
    tokyo_sumida_events:'t131075d0000000136-d97c9fdbf7d4a3ad38c0cac25c78beb3-0',
    tokyo_itabashi_events:'t131199d0000000141-800c4c5f071f4be278136b4d19b2bcf8-0',
    tokyo_bunkyo_events:'t131059d0000000001-630186c15946c72991dddc3808cd46dc-0',
-   tokyo_chuo_events:'t131024d0000000041-e5e6d00248bbe97738bfb80d0d3d3e00-0'
+   tokyo_chuo_events:'t131024d0000000041-e5e6d00248bbe97738bfb80d0d3d3e00-0',
+   tokyo_bigsight_events:'t001001d0000000001-1db9fd22025886d3d5c9607d5c24fdf0-0'
  };
  assert.deepEqual([...TOKYO_EVENT_SOURCE_IDS].sort(),Object.keys(expected).sort());
  const calls=[];
@@ -258,5 +259,32 @@ test('Tokyo: Koto, Sumida, Itabashi, Bunkyo and Chuo are fixed POST-only CC BY d
    assert.equal(matched.searchParams.get('limit'),'250');
  }
  await assert.rejects(()=>src.get('tokyo_yokohama_events'),/invalid-source/);
- assert.equal(calls.length,5);
+ assert.equal(calls.length,6);
+});
+
+
+test('Tokyo Big Sight official 2026 nested row events retain only public title/period/link fields',async()=>{
+ const dataset='tokyo_bigsight_events';
+ const host='https://service.api.metro.tokyo.lg.jp/api/t001001d0000000001-1db9fd22025886d3d5c9607d5c24fdf0-0/json?limit=250';
+ let calls=0;
+ const source=createActivityAcquisition({clock:()=>NOW,fetchImpl:async(url,opts)=>{
+   calls++;assert.equal(url,host);assert.equal(opts.method,'POST');
+   return ok({hits:[{row:{
+     '展示会名':'東京の展示会2026','会期(開始)':'2026/11/15','会期(終了)':'2026/11/17',
+     '利用施設':'南1-4','開催時間':'10:00-17:00','来場対象者':'一般',
+     '入場料について':'無料','内容':'展示会',
+     URL:'https://www.example.org/tokyo-event',
+     TEL:'03-1234-5678',連絡先:'secret@example.org',
+   }}]});
+ }});
+ const packet=await source.get(dataset);
+ assert.equal(packet.tokyo.datasetId,'tokyo_bigsight');
+ assert.equal(packet.tokyo.hits.length,1);
+ const row=packet.tokyo.hits[0]._source;
+ assert.equal(row['展示会名'],'東京の展示会2026');
+ assert.equal(row['会期(開始)'],'2026/11/15');
+ assert.equal(row.URL,'https://www.example.org/tokyo-event');
+ assert.equal(row.TEL,undefined);
+ assert.equal(row['連絡先'],undefined);
+ assert.equal(calls,1);
 });
