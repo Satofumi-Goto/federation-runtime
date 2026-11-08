@@ -13,6 +13,7 @@ const TOKYO_EVENT_URLS=Object.freeze({
   tokyo_itabashi_events:'https://service.api.metro.tokyo.lg.jp/api/t131199d0000000141-800c4c5f071f4be278136b4d19b2bcf8-0/json?limit=250',
   tokyo_bunkyo_events:'https://service.api.metro.tokyo.lg.jp/api/t131059d0000000001-630186c15946c72991dddc3808cd46dc-0/json?limit=250',
   tokyo_chuo_events:'https://service.api.metro.tokyo.lg.jp/api/t131024d0000000041-e5e6d00248bbe97738bfb80d0d3d3e00-0/json?limit=250',
+  tokyo_bigsight_events:'https://service.api.metro.tokyo.lg.jp/api/t001001d0000000001-1db9fd22025886d3d5c9607d5c24fdf0-0/json?limit=250',
 });
 // Fixed public headline RSS feeds plus the existing signed news sources.
 // No caller-defined query, URL, location, publisher text or paid endpoint.
@@ -59,12 +60,15 @@ const TOKYO_PUBLIC_FIELDS=Object.freeze([
   '経度','開催場所_経度','施設経度','longitude',
   '場所名称','開催場所','開催場所名称','施設名',
   '住所','開催場所住所','開催地住所','URL','ホームページ','関連URL','イベントURL',
-  'イベント種類','ジャンル','分類','料金（基本）','料金(基本)','参加費','料金'
+  'イベント種類','ジャンル','分類','料金（基本）','料金(基本)','参加費','料金',
+  // Big Sight 2026 official public exhibition dataset fields; exclude TEL and contact PII.
+  '展示会名','会期(開始)','会期(終了)','利用施設','開催時間','来場対象者','入場料について','内容'
 ]);
 export function projectTokyoEventHit(hit){
   if(!hit||typeof hit!=='object'||Array.isArray(hit))throw Error('invalid-tokyo-hit');
   const row=hit._source&&typeof hit._source==='object'&&!Array.isArray(hit._source)
-    ?hit._source:hit;
+    ?hit._source:hit.row&&typeof hit.row==='object'&&!Array.isArray(hit.row)
+      ?hit.row:hit;
   const cleaned={};
   for(const field of TOKYO_PUBLIC_FIELDS){
     const value=row[field];
