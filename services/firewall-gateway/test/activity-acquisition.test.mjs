@@ -17,7 +17,7 @@ async function serve(env,fetchImpl,fn){
 }
 async function request(base,source='online',extra={}){
  const body=JSON.stringify({source});
- const key=['gdelt','mlit'].includes(source)?NEWS_KEY:KEY;
+ const key=['gdelt','mlit','meti','digital'].includes(source)?NEWS_KEY:KEY;
  const headers={'content-type':'application/json',...signHeaders({client:'activity',key,body,path:PATH,time:NOW}),...extra};
  const r=await fetch(base+PATH,{method:'POST',headers,body});
  return {status:r.status,data:await r.json()};
@@ -219,4 +219,36 @@ test('HTTP 200 GDELT throttle prose is rejected, not cached as a valid feed',asy
   assert.equal((await request(root,'gdelt')).status,503);
   assert.equal(calls,1);
  });
+});
+
+test('official ministry RSS is fetched only by fixed signed news routes, returns bounded XML and caches',async()=>{
+  const urls={
+    meti:'https://www.meti.go.jp/ml_index_release_atom.xml',
+    digital:'https://www.digital.go.jp/rss/news.xml',
+  };
+  const calls=[];
+  const feed=Buffer.from('<?xml version="1.0" encoding="UTF-8"?><feed><entry><title>公式発表</title><link href="https://www.meti.go.jp/press/2026/example.html"/></entry></feed>');
+  const provider=async(url,options)=>{
+    calls.push(url);
+    assert.equal(options.method,'GET');
+    assert.equal(options.redirect,'manual');
+    assert.equal(options.credentials,'omit');
+    assert.match(options.headers.Accept,/xml/);
+    return new Response(feed,{status:200,headers:{'content-type':'application/xml'}});
+  };
+  await serve(config({FIREWALL_ACTIVITY_SOURCES_ENABLED:'true'}),provider,async root=>{
+    for(const source of ['meti','digital']){
+      const response=await request(root,source);
+      assert.equal(response.status,200);
+      assert.equal(response.data.schema,'gateway.activity-raw/1');
+      assert.equal(response.data.personalDataCollected,false);
+      assert.equal(response.data.source,source);
+      assert.equal(Buffer.from(response.data.data.body,'base64url').toString(),feed.toString());
+      assert.equal((await request(root,source)).status,200);
+    }
+    assert.equal((await request(root,'https://untrusted.invalid/rss')).status,400);
+    assert.deepEqual(calls,[urls.meti,urls.digital]);
+    assert.equal((await request(root,'meti',{origin:'https://seneschal-runtime.com'})).status,403);
+    assert.deepEqual(calls,[urls.meti,urls.digital]);
+  });
 });
