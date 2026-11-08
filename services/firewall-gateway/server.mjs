@@ -286,20 +286,20 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     try{command=JSON.parse(body);}
     catch{return reply(res,400,{ok:false,reason:'invalid-json'});}
     const kawasakiSource=command?.source==='events';
-    const eventSource=kawasakiSource||TOKYO_EVENT_SOURCE_IDS.includes(command?.source);
+    const eventSource=kawasakiSource||TOKYO_EVENT_SOURCE_IDS.includes(command?.source)||command?.source==='japan_event_events';
     const keys=command&&typeof command==='object'&&!Array.isArray(command)
       ?Object.keys(command).sort().join(','):'';
     const eventQuery=kawasakiSource&&keys==='from,page,source,to'
       ?validateEventQuery(command,clock()):null;
     if(!command||typeof command!=='object'||Array.isArray(command)||
-      !['tv','online',...NEWS_SOURCE_IDS,'events','anilist',...TOKYO_EVENT_SOURCE_IDS].includes(command.source)||
+      !['tv','online',...NEWS_SOURCE_IDS,'events','anilist',...TOKYO_EVENT_SOURCE_IDS,'japan_event_events'].includes(command.source)||
       (kawasakiSource?!eventQuery:keys!=='source'))
       return reply(res,400,{ok:false,reason:'unsupported-command'});
     const newsSource=NEWS_SOURCE_IDS.includes(command.source);
     // The Tokyo-only staging key is an ADDITIONAL, isolated credential, never
     // a replacement or authorization for Kawasaki, TV, news or any user data.
     let identity=(eventSource?eventAuth:newsSource?newsAuth:sourceAuth).verify(req,body,path);
-    const tokyoSource=eventSource&&!kawasakiSource;
+    const tokyoSource=TOKYO_EVENT_SOURCE_IDS.includes(command.source);
     if(!identity.ok&&tokyoSource&&tokyoAuth.configured&&
        ['service-auth-unconfigured','signature-invalid'].includes(identity.reason))
       identity=tokyoAuth.verify(req,body,path);
