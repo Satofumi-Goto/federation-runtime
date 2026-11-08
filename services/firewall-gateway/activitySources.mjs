@@ -19,6 +19,8 @@ const TOKYO_EVENT_URLS=Object.freeze({
 const NEWS=Object.freeze({
   gdelt:'https://api.gdeltproject.org/api/v2/doc/doc?query='+encodeURIComponent('"electric vehicle"')+'&mode=artlist&maxrecords=6&timespan=12h&sort=datedesc&format=json',
   mlit:'https://www.mlit.go.jp/pressrelease.rdf',
+  meti:'https://www.meti.go.jp/ml_index_release_atom.xml',
+  digital:'https://www.digital.go.jp/rss/news.xml',
   yahoo_domestic:'https://news.yahoo.co.jp/rss/topics/domestic.xml',
   yahoo_entertainment:'https://news.yahoo.co.jp/rss/topics/entertainment.xml',
   yahoo_sports:'https://news.yahoo.co.jp/rss/topics/sports.xml',
@@ -28,7 +30,7 @@ const NEWS=Object.freeze({
 });
 export const TOKYO_EVENT_SOURCE_IDS=Object.freeze(Object.keys(TOKYO_EVENT_URLS));
 export const NEWS_SOURCE_IDS=Object.freeze(Object.keys(NEWS));
-const RSS_NEWS_IDS=new Set(['mlit','yahoo_domestic','yahoo_entertainment','yahoo_sports','google_japan','google_entertainment','google_business']);
+const RSS_NEWS_IDS=new Set(['mlit','meti','digital','yahoo_domestic','yahoo_entertainment','yahoo_sports','google_japan','google_entertainment','google_business']);
 // One fixed, non-personal AniList request. No caller-supplied GraphQL, URL or credentials.
 const ANILIST_URL='https://graphql.anilist.co/';
 const ANILIST_BODY=JSON.stringify({query:'query { Page(page:1,perPage:6) { media(type:ANIME,sort:TRENDING_DESC,isAdult:false) { id title { native romaji } siteUrl format nextAiringEpisode { airingAt episode } } } }'});
