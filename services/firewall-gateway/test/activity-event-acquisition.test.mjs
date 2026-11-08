@@ -44,8 +44,8 @@ test('Gateway event route is independently disabled by default and does not enab
  const src=readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
  assert.match(src,/FIREWALL_ACTIVITY_EVENTS_ENABLED==='true'/);
  assert.match(src,/event-egress-disabled/);
- assert.match(src,/\['tv','online',\.\.\.NEWS_SOURCE_IDS,'events','anilist',\.\.\.TOKYO_EVENT_SOURCE_IDS\]/);
- assert.match(src,/const eventSource=kawasakiSource\|\|TOKYO_EVENT_SOURCE_IDS\.includes\(command\?\.source\)/);
+ assert.match(src,/\['tv','online',\.\.\.NEWS_SOURCE_IDS,'events','anilist',\.\.\.TOKYO_EVENT_SOURCE_IDS,'japan_event_events'\]/);
+ assert.match(src,/const eventSource=kawasakiSource\|\|TOKYO_EVENT_SOURCE_IDS\.includes\(command\?\.source\)\|\|command\?\.source==='japan_event_events'/);
  assert.doesNotMatch(src,/autoCutover=true/);
 });
 
@@ -287,4 +287,48 @@ test('Tokyo Big Sight official 2026 nested row events retain only public title/p
  assert.equal(row.TEL,undefined);
  assert.equal(row['連絡先'],undefined);
  assert.equal(calls,1);
+});
+
+test('Japan Event licensed feed is fixed read-only GET; output includes only event facts and attribution',async()=>{
+ let calls=0;
+ const now=Date.parse('2026-11-08T00:00:00Z');
+ const payload={count:4,results:[
+   {id:11,type:'event',locale:'ja',title:'今後の名古屋まつり',slug:'nagoya-event-2026',
+    structured:{city:'nagoya',datetime:{start:'2026-11-15T10:00:00+09:00',end:'2026-11-16T18:00:00+09:00'},
+      venue:{name:'名古屋市民ホール',address:'愛知県名古屋市中区'},external_url:'https://example.org/nagoya',
+      price_text:'無料',event_type:'festival',date_synthetic:false,
+      image:{url:'https://example.org/restricted-image.jpg'},contact:'private@example.org'}},
+   {id:12,type:'event',locale:'ja',title:'大阪の終了イベント',slug:'osaka-past',
+    structured:{city:'osaka',datetime:{start:'2025-11-15T10:00:00+09:00',end:'2025-11-16T18:00:00+09:00'},venue:{name:'会場',address:'大阪市'}}},
+   {id:13,type:'event',locale:'ja',title:'未確定の日付',slug:'unverified-future',
+    structured:{city:'tokyo',datetime:{start:'2026-11-16T10:00:00+09:00'},venue:{name:'会場',address:'東京都中央区'},date_synthetic:true}},
+   {id:14,type:'event',locale:'ja',title:'中止の催事',slug:'cancelled',
+    structured:{city:'tokyo',datetime:{start:'2026-11-16T10:00:00+09:00'},venue:{name:'会場',address:'東京都中央区'},event_status:'cancelled'}},
+ ]};
+ const source=createActivityAcquisition({clock:()=>now,fetchImpl:async(url,init)=>{
+   calls++;assert.equal(init.method,'GET');
+   assert.equal(init.redirect,'manual');assert.equal(init.credentials,'omit');
+   assert.equal(url,'https://owned-media-production.up.railway.app/api/sites/event/articles/?type=event&lang=ja&page_size=1000');
+   assert.equal(init.headers.Accept,'application/json');
+   return ok(payload);
+ }});
+ const record=await source.get('japan_event_events');
+ assert.equal(record.schema,'gateway.activity-raw/1');
+ assert.equal(record.source,'japan_event_events');
+ assert.equal(record.personalDataCollected,false);
+ assert.equal(record.japan.total,4);
+ assert.equal(record.japan.events.length,1);
+ assert.equal(record.japan.events[0].title,'今後の名古屋まつり');
+ assert.equal(record.japan.events[0].sourcePage,'https://japan-event.info/ja/articles/nagoya-event-2026');
+ assert.equal(record.japan.events[0].city,'nagoya');
+ assert.equal(record.japan.events[0].address,'愛知県名古屋市中区');
+ assert.equal(record.japan.events[0].url,'https://example.org/nagoya');
+ assert.match(record.japan.attribution,/Japan-Event/);
+ assert(!JSON.stringify(record).includes('private@example.org'));
+ assert(!JSON.stringify(record).includes('restricted-image.jpg'));
+ assert(!JSON.stringify(record).includes('画像'));
+ const cached=await source.get('japan_event_events');
+ assert.equal(cached.cached,true);
+ assert.equal(calls,1);
+ await assert.rejects(()=>source.get('japan_events_arbitrary'),/invalid-source/);
 });
