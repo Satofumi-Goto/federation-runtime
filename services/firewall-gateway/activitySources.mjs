@@ -7,6 +7,9 @@ const HOSTS=Object.freeze({
 });
 const TV='https://api.tvmaze.com';
 const KAWASAKI='https://eventapp.city.kawasaki.jp/data/api/v1/events';
+// Japan Event publishes this public event-data feed with commercial reuse by
+// attribution. Only fixed factual listings are projected; never images/HTML/PII.
+const JAPAN_EVENT_URL='https://owned-media-production.up.railway.app/api/sites/event/articles/?type=event&lang=ja&page_size=1000';
 const TOKYO_EVENT_URLS=Object.freeze({
   tokyo_koto_events:'https://service.api.metro.tokyo.lg.jp/api/t131083d0000000017-252a3033bb76c746c8ee30c24a3a2b5a-0/json?limit=250',
   tokyo_sumida_events:'https://service.api.metro.tokyo.lg.jp/api/t131075d0000000136-d97c9fdbf7d4a3ad38c0cac25c78beb3-0/json?limit=250',
@@ -44,6 +47,8 @@ const KAWASAKI_INPUT_MAX_BYTES=900_000;
 const KAWASAKI_OUTPUT_MAX_BYTES=340_000;
 const TOKYO_INPUT_MAX_BYTES=1_400_000;
 const TOKYO_OUTPUT_MAX_BYTES=340_000;
+const JAPAN_EVENT_INPUT_MAX_BYTES=8_000_000;
+const JAPAN_EVENT_OUTPUT_MAX_BYTES=335_000;
 const HOUR=3_600_000;
 const day=ms=>new Date(ms+9*HOUR).toISOString().slice(0,10);
 const parseTime=x=>typeof x==='string'?Date.parse(x):NaN;
@@ -117,7 +122,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
     if(u.protocol!=='https:'||u.username||u.password||
        !([HOSTS.swiss,HOSTS.fellowship,HOSTS.redlook,...Object.values(NEWS)].includes(u.href)||
          anilist&&u.href===ANILIST_URL||
-         tokyo&&Object.values(TOKYO_EVENT_URLS).includes(u.href)||
+         tokyo&&Object.values(TOKYO_EVENT_URLS).includes(u.href)||u.href===JAPAN_EVENT_URL||
          u.hostname==='api.tvmaze.com'&&(
            /^\/schedule$/.test(u.pathname)&&/^country=JP&date=\d{4}-\d{2}-\d{2}$/.test(u.search.slice(1))||
            /^\/(?:episodes|shows)\/[0-9]+\/(?:guestcast|cast)$/.test(u.pathname)&&!u.search
@@ -246,8 +251,56 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
     return {tokyo:{datasetId:source.replace(/_events$/,''),hits,complete:true},
       providers:[{id:source.replace(/_events$/,''),state:'ok',count:hits.length}]};
   }
+  async function japanEvents(signal){
+    // One pinned GET per 30m per Gateway instance, no caller-provided city,
+    // coordinates, query, headers or credentials. Source license permits factual
+    // event reuse with attribution; images and body copy are excluded.
+    const raw=await read(JAPAN_EVENT_URL,signal,{maxBytes:JAPAN_EVENT_INPUT_MAX_BYTES});
+    if(!Array.isArray(raw?.results)||raw.results.length>1000||
+      !Number.isSafeInteger(raw?.count)||raw.count<0)
+      throw Error('invalid-japan-events');
+    const safeUrl=value=>{
+      if(typeof value!=='string')return '';
+      try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password?u.href.slice(0,500):'';}
+      catch{return '';}
+    };
+    const now=clock();
+    const records=raw.results.flatMap(row=>{
+      const data=row?.structured,dt=data?.datetime,venue=data?.venue;
+      const title=publicText(row?.title,160);
+      const start=Date.parse(dt?.start),end=Date.parse(dt?.end);
+      if(row?.type!=='event'||row?.locale!=='ja'||!title||
+        !Number.isFinite(start)||start>now+370*24*HOUR||
+        (Number.isFinite(end)?end<now:start<now)||
+        data?.date_synthetic===true||data?.event_status==='cancelled')return [];
+      const slug=typeof row?.slug==='string'&&/^[a-z0-9][a-z0-9-]{0,140}$/.test(row.slug)
+        ?row.slug:'';
+      const sourcePage=slug?'https://japan-event.info/ja/articles/'+slug:'';
+      const original=safeUrl(data?.external_url)||safeUrl(data?.experience_url);
+      const address=publicText(venue?.address,240);
+      const place=publicText(venue?.name,100);
+      // Address or verified publisher city needed for city-specific attribution.
+      const city=publicText(data?.city,50).toLowerCase();
+      if(!sourcePage||!(address||city&&city!=='nationwide')||!place)return [];
+      return [{
+        id:row.id,sourceId:'japan_event',title,startsAt:dt.start,
+        endsAt:Number.isFinite(end)?dt.end:null,venue:place,address,city,
+        url:original||sourcePage,sourcePage,
+        category:publicText(data?.event_type,60),
+        price:publicText(data?.price_text||data?.ticket?.price,90),
+        // No copyrighted article prose, pictures or unlicensed ticketing assets.
+      }];
+    }).sort((a,b)=>Date.parse(a.startsAt)-Date.parse(b.startsAt)).slice(0,400);
+    const output={japan:{events:records,total:raw.count,
+      sourceUrl:'https://japan-event.info/ja/articles/data-japan-festival-calendar-2026',
+      attribution:'Japan-Event Festival Calendar Database, Japan-Event (japan-event.info)'},
+      providers:[{id:'japan_event',state:'ok',count:records.length}]};
+    if(Buffer.byteLength(JSON.stringify(output),'utf8')>JAPAN_EVENT_OUTPUT_MAX_BYTES)
+      throw Error('japan-events-projection-too-large');
+    return output;
+  }
   async function get(source,selector=null){
-    if(!['tv','online',...NEWS_SOURCE_IDS,'events','anilist',...TOKYO_EVENT_SOURCE_IDS].includes(source))throw Error('invalid-source');
+    if(!['tv','online',...NEWS_SOURCE_IDS,'events','anilist',...TOKYO_EVENT_SOURCE_IDS,'japan_event_events'].includes(source))throw Error('invalid-source');
     const now=clock();
     const query=source==='events'
       ?validateEventQuery(selector??{from:day(now),to:day(now+14*24*HOUR),page:1},now):null;
@@ -264,6 +317,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
         const data=source==='tv'?await tv(controller.signal):source==='online'?await online(controller.signal)
           :source==='events'?await events(controller.signal,query)
           :TOKYO_EVENT_URLS[source]?await tokyoEvents(source,controller.signal)
+          :source==='japan_event_events'?await japanEvents(controller.signal)
           :source==='anilist'?{data:await read(ANILIST_URL,controller.signal,{bytes:true,anilist:true})}
           : {data:await read(NEWS[source],controller.signal,{bytes:true})};
         const value={schema:'gateway.activity-raw/1',source,fetchedAt:new Date(clock()).toISOString(),
