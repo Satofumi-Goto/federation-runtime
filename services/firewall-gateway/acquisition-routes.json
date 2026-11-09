@@ -473,13 +473,13 @@
     },
     {
       "id": "gsiEvacuation",
-      "name": "国土地理院 指定緊急避難場所・指定避難所",
+      "name": "国土地理院 指定緊急避難場所（地震）",
       "basis": "registered",
-      "primary": null,
+      "primary": "Seneschal searchExternalPoi supplements evacuation → 国土地理院 skhb04 GeoJSON",
       "secondary": null,
-      "state": "接続なし",
-      "verifiedAt": null,
-      "evidence": null,
+      "state": "確認済み",
+      "verifiedAt": "2026-11-09",
+      "evidence": "2026-11-09 独立staging限定。PR #1065 / b32641598aa481d289811ae54e1260c7c6a402da。searchExternalPoi supplements evacuation実POSTで東京駅周辺6件、公開Mapの瀬戸市役所カードで水南小学校など6件を取得・表示確認。地震の指定緊急避難場所のみ、選択地点のz10区画内・直線5km以内、開設/安全性/経路は未確認。指定避難所・他の災害種別・全国全件の検証ではない。",
       "candidate": null,
       "requiredKeys": []
     },
@@ -931,10 +931,10 @@
       "basis": "registered",
       "primary": null,
       "secondary": "活動コンソール activityInterests（国交省RSS）→ Federation共有レコード → Seneschal",
-      "state": "未確認",
-      "verifiedAt": null,
-      "evidence": null,
-      "candidate": "Activity収集処理はPR #226、実通信・本番経路・Gateway cutover未検証。Shadow HOLD。",
+      "state": "確認済み",
+      "verifiedAt": "2026-11-09",
+      "evidence": "2026-11-09 独立stagingの/api/functions/activityInterestFeed実POST 200。Activity受信データmlit.status=ok、公式見出し・日時・原典リンク6件、fetchedAt=2026-11-09T10:25:56.051Z。Seneschal受信経路の実HTTP確認でありニュース個別UIはNOT VERIFIED。GDELTのprovider-rate-limitedとは区別。",
+      "candidate": null,
       "requiredKeys": []
     },
     {
