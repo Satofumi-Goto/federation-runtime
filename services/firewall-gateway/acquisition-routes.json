@@ -563,9 +563,9 @@
       "basis": "registered",
       "primary": "Seneschal Google Places／Maps JavaScript（Place ID、建物名、住所、評価・口コミ）",
       "secondary": null,
-      "state": "未確認",
-      "verifiedAt": null,
-      "evidence": null,
+      "state": "確認済み",
+      "verifiedAt": "2026-11-09",
+      "evidence": "独立staging限定。2026-11-09 18:47 JST、公開Mapで「瀬戸市役所」検索→Google Places実施設1件（愛知県瀬戸市追分町64-1）。PR #1061で固定デモ候補を既存Places API (New)へ接続、#1062で実座標35.2240123,137.0840214へ地図移動・施設カード表示を確認。サーバー専用GOOGLE_PLACES_API_KEYの設定確認ではなく、既存Maps JavaScript経路の実測。",
       "candidate": null,
       "requiredKeys": [
         "GOOGLE_PLACES_API_KEY"
@@ -1121,10 +1121,10 @@
       "basis": "registered",
       "primary": "Seneschal searchExternalPoi → BODIK WAPI（geometry）とODM出典・ライセンス照合",
       "secondary": null,
-      "state": "未確認",
-      "verifiedAt": null,
-      "evidence": null,
-      "candidate": "開発環境のトイレ6件・AED6件を確認。本番配備・公開画面は未検証。CC BY/CC0のみ表示",
+      "state": "確認済み",
+      "verifiedAt": "2026-11-09",
+      "evidence": "独立staging限定。2026-11-09 18:56 JST、公開Mapの瀬戸市周辺検索で18件取得・表示条件に合う12件を一覧表示。パルティせとの施設利用料金・駐車場案内・出典/ライセンスを既存カードで確認。別途backend実POSTでトイレ6・AED6・観光6件。地域限定の登録情報であり、現在の稼働・空き状況は未確認。",
+      "candidate": null,
       "requiredKeys": []
     },
     {
