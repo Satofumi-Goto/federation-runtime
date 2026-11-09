@@ -7,7 +7,7 @@ test('gateway owns the 80-route Seneschal acquisition ledger, one category per r
  assert.equal(ACQUISITION_LEDGER.owner,'firewall-gateway');
  assert.equal(ACQUISITION_LEDGER.routes.length,80);
  const s=publicAcquisitionLedger({}).summary;
- assert.deepEqual([s.verified,s.unverified,s.unconnected],[4,43,33]);
+ assert.deepEqual([s.verified,s.unverified,s.unconnected],[28,20,32]);
  assert.throws(()=>validateLedger({...ACQUISITION_LEDGER,routes:[...ACQUISITION_LEDGER.routes,ACQUISITION_LEDGER.routes[0]]}),/duplicate/);
 });
 
