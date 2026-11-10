@@ -63,6 +63,8 @@ const stripThink=text=>text.replace(/<think>[\s\S]*?<\/think>/g,'').trim();
 export const HORDE_CLIENT_AGENT='federation-firewall-gateway:1:github.com/Satofumi-Goto/federation-runtime';
 export const FREE_AI_ROLES=Object.freeze(['plan','implement','review','test','reply-advice','summarize']);
 const CODE_ROLES=new Set(['plan','implement','review','test']);
+// Per calling app, across all providers: a leaked key cannot turn the gateway into an open relay.
+export const FREE_AI_CLIENT_LIMITS=Object.freeze({perMinute:30,perDay:3000});
 export const FREE_AI_LIMITS=Object.freeze({maxMessages:16,maxMessageChars:24000,maxTotalChars:48000,
  maxOutputTokens:2048,maxResponseBytes:262144,timeoutMs:60000,maxAnswerChars:32000});
 export const FREE_AI_POLICY=Object.freeze({version:'federation-firewall-free-ai/1',path:FREE_AI_PATH,defaultEnabled:false,
@@ -207,9 +209,19 @@ export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sle
   if(!text)throw Error('empty-answer');
   return {model,text};
  }
+ const clientUse=new Map();
+ function admitClient(client){
+  const now=clock(),d=today();
+  let u=clientUse.get(client);
+  if(!u||u.day!==d){u={day:d,count:0,minute:[]};clientUse.set(client,u);}
+  u.minute=u.minute.filter(t=>now-t<60000);
+  if(u.minute.length>=FREE_AI_CLIENT_LIMITS.perMinute||u.count>=FREE_AI_CLIENT_LIMITS.perDay)return false;
+  u.minute.push(now);u.count++;return true;
+ }
  async function chat(client,command){
   if(!cfg.enabled)return {status:503,result:{ok:false,error:'free-ai-disabled'}};
   if(!cfg.clients.has(client))return {status:403,result:{ok:false,error:'client-not-allowed'}};
+  if(!admitClient(client))return {status:429,result:{ok:false,error:'client-rate-limited',retryAfterSeconds:60,paidCalls:0}};
   const order=chain(command);
   if(!order.length)return {status:400,result:{ok:false,error:'provider-not-allowed-for-role'}};
   const attempts=[];
