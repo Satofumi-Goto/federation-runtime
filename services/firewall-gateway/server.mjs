@@ -15,6 +15,7 @@ import {renderConsole} from './ui.mjs';
 import {independentApps,INDEPENDENT_ORIGINS,SERVING_HOSTS} from './origins.mjs';
 import {publicAcquisitionLedger} from './acquisitionLedger.mjs';
 import {storeFromEnv,createSharedGuards} from './store.mjs';
+import {precheckSignedHeaders,declaredTooLarge,findSecret} from './hardening.mjs';
 
 const SECURITY_HEADERS=Object.freeze({
  'Cache-Control':'no-store',
@@ -24,11 +25,12 @@ const SECURITY_HEADERS=Object.freeze({
  'Permissions-Policy':'camera=(), microphone=(), geolocation=(), payment=()',
  'Cross-Origin-Resource-Policy':'same-origin',
  'Cross-Origin-Opener-Policy':'same-origin',
- 'Strict-Transport-Security':'max-age=86400',
+ 'Strict-Transport-Security':'max-age=31536000; includeSubDomains',
 });
 const safeCsp=nonce=>"default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; img-src 'none'; script-src 'none'; connect-src 'none'; style-src 'nonce-"+nonce+"'";
 function reply(res,status,data,extra={}){
- const headers={...SECURITY_HEADERS,'Content-Type':'application/json; charset=utf-8',...extra};
+ const headers={...SECURITY_HEADERS,'Content-Type':'application/json; charset=utf-8',
+  'Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",...extra};
  res.writeHead(status,headers);res.end(JSON.stringify(data));
 }
 function page(res,status,body,nonce){
@@ -149,6 +151,12 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  }
  const assistant=createAssistant({env,fetchImpl,clock});
  const freeAi=createFreeAi({env,fetchImpl,clock});
+ // Dedicated free-AI credential for the federation client only. It authorizes
+ // nothing else and leaves FIREWALL_CLIENT_KEYS_JSON untouched.
+ const freeAiKey=env.FIREWALL_FREE_AI_FEDERATION_KEY||'';
+ const freeAiAuth=createAuthenticator({env:{
+   FIREWALL_CLIENT_KEYS_JSON:freeAiKey?JSON.stringify({federation:freeAiKey}):''
+ },clock});
  const signedClients=new Set();
  const head=gitHead(env);
  const selfOrigin=INDEPENDENT_ORIGINS['firewall-gateway'];
@@ -179,6 +187,20 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     try{auditSink(JSON.stringify({
       type:'firewall.free-ai.request',at:new Date(clock()).toISOString(),
       method:req.method,status:res.statusCode,client:freeClient,provider:freeProvider,role:freeRole,
+    }));}catch{/* Observability must not interrupt responses. */}
+  });
+  // Activity acquisition / admin audit: fixed metadata only, never body or IP.
+  let actClient=null,actSource=null;
+  if(path==='/api/v1/activity/acquire')res.once('finish',()=>{
+    try{auditSink(JSON.stringify({
+      type:'firewall.activity.request',at:new Date(clock()).toISOString(),
+      method:req.method,status:res.statusCode,client:actClient,source:actSource,
+    }));}catch{/* Observability must not interrupt responses. */}
+  });
+  if(path==='/admin')res.once('finish',()=>{
+    try{auditSink(JSON.stringify({
+      type:'firewall.admin.request',at:new Date(clock()).toISOString(),
+      method:req.method,status:res.statusCode,
     }));}catch{/* Observability must not interrupt responses. */}
   });
   if(!req.url||req.url.length>1024)return reply(res,414,{ok:false,reason:'invalid-target'});
@@ -266,6 +288,9 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     if(req.method!=='POST')return deny(405,'method_not_allowed');
     if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
      return deny(415,'invalid_question');
+    if(declaredTooLarge(req,ASSISTANT_MAX_BODY))return deny(413,'too_large',{},{Connection:'close'});
+    const pre=precheckSignedHeaders(req,clock);
+    if(!pre.ok)return deny(pre.status,'origin_not_allowed',{reason:pre.reason},{Connection:'close'});
     let body;
     try{body=await limitedBody(req,ASSISTANT_MAX_BODY);}
     catch{return deny(413,'too_large',{},{Connection:'close'});}
@@ -280,6 +305,10 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     if(!parsed.ok)return deny(parsed.status||400,parsed.error,{requestId:parsed.requestId});
     askCharacter=parsed.command.character?.id||null;
     askHistory=parsed.command.history.length;
+    const c=parsed.command;
+    const leaked=findSecret([c.question,c.context,c.page,...c.history.map(m=>m.content),
+      ...Object.values(c.character||{}).flat().filter(v=>typeof v==='string')]);
+    if(leaked)return deny(400,'invalid_question',{reason:'secret-detected',requestId:c.requestId||null});
     const result=await assistant.ask(identity.client,parsed.command);
     return reply(res,result.status,result.result,
       result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});
@@ -293,10 +322,18 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     if(req.method!=='POST')return reply(res,405,{ok:false,error:'method-not-allowed'});
     if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
      return reply(res,415,{ok:false,error:'json-required'});
+    if(declaredTooLarge(req,FREE_AI_MAX_BODY))
+     return reply(res,413,{ok:false,error:'request-too-large'},{Connection:'close'});
+    const pre=precheckSignedHeaders(req,clock);
+    if(!pre.ok)return reply(res,pre.status,{ok:false,error:pre.reason},{Connection:'close'});
     let body;
     try{body=await limitedBody(req,FREE_AI_MAX_BODY);}
     catch{return reply(res,413,{ok:false,error:'request-too-large'},{Connection:'close'});}
-    const identity=auth.verify(req,body,path);
+    let identity=freeAiAuth.configured&&req.headers['x-fw-client']==='federation'
+      ?freeAiAuth.verify(req,body,path):auth.verify(req,body,path);
+    if(!identity.ok&&freeAiAuth.configured&&req.headers['x-fw-client']==='federation'
+      &&['signature-invalid'].includes(identity.reason)&&auth.configured)
+      identity=auth.verify(req,body,path);
     if(!identity.ok)return reply(res,identity.status,{ok:false,error:identity.reason});
     const shared=await enforceShared(identity.client,req.headers['x-fw-nonce'],'free-ai');
     if(!shared.ok)return reply(res,shared.status,{ok:false,error:shared.reason});
@@ -304,6 +341,9 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     const parsed=parseFreeAiCommand(body);
     if(!parsed.ok)return reply(res,parsed.status,{ok:false,error:parsed.error});
     freeRole=parsed.command.role;
+    // Keyless providers are third parties; a credential must never leave here.
+    if(findSecret(parsed.command.messages.map(m=>m.content)))
+     return reply(res,422,{ok:false,error:'secret-detected'});
     const result=await freeAi.chat(identity.client,parsed.command);
     freeProvider=result.result.provider||null;
     return reply(res,result.status,result.result,
@@ -316,6 +356,8 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     if(req.method!=='POST')return reply(res,405,{ok:false,reason:'method-not-allowed'});
     if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
       return reply(res,415,{ok:false,reason:'json-required'});
+    const pre=precheckSignedHeaders(req,clock);
+    if(!pre.ok)return reply(res,pre.status,{ok:false,reason:pre.reason},{Connection:'close'});
     let body;
     try{body=await limitedBody(req,128);}
     catch{return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});}
@@ -342,6 +384,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       identity=tokyoAuth.verify(req,body,path);
     if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
     if(identity.client!=='activity')return reply(res,403,{ok:false,reason:'activity-only'});
+    actClient=identity.client;actSource=command.source;
     if(!activitySourcesEnabled)return reply(res,503,{ok:false,reason:'activity-egress-disabled'});
     if(eventSource&&!activityEventsEnabled)
       return reply(res,503,{ok:false,reason:'event-egress-disabled'});
@@ -368,6 +411,10 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     if(req.method!=='POST')return reply(res,405,{ok:false,reason:'method-not-allowed'});
     if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
      return reply(res,415,{ok:false,reason:'json-required'});
+    if(declaredTooLarge(req,512))
+     return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});
+    const pre=precheckSignedHeaders(req,clock);
+    if(!pre.ok)return reply(res,pre.status,{ok:false,reason:pre.reason},{Connection:'close'});
     let body;
     try{body=await limitedBody(req);}
     catch{return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});}
@@ -397,6 +444,10 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  server.requestTimeout=10000;
  server.headersTimeout=12000;
  server.keepAliveTimeout=3500;
+ // Bound open sockets and requests per keep-alive socket (slow-loris / pipelining).
+ server.maxConnections=Number.isInteger(Number(env.FIREWALL_MAX_CONNECTIONS))&&Number(env.FIREWALL_MAX_CONNECTIONS)>=8
+  &&Number(env.FIREWALL_MAX_CONNECTIONS)<=1024?Number(env.FIREWALL_MAX_CONNECTIONS):128;
+ server.maxRequestsPerSocket=100;
  server.on('clientError',(_error,socket)=>{if(socket.writable)socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');});
  return {server,auth,access,egress,githubCanary,assistant,freeAi};
 }

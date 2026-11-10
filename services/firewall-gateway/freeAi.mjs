@@ -1,5 +1,6 @@
 import {readBoundedJson} from './egress.mjs';
 import {CLIENT_IDS} from './policy.mjs';
+import {hasPersonalData} from './hardening.mjs';
 // Keyless free AI relay. Every provider here works WITHOUT an account or API key,
 // so no credential is stored, forwarded or logged; nothing here can be billed.
 // Callers are the nine signed family apps (HMAC server-to-server, no browsers).
@@ -16,7 +17,21 @@ export const FREE_AI_PROVIDERS=Object.freeze({
   model:'gpt-oss:20b',freeModel:/^[A-Za-z0-9][A-Za-z0-9.:_/-]{0,79}$/,rpm:20,perDay:1000,concurrent:2,publicPrompts:true}),
  kilo:Object.freeze({name:'Kilo AI Gateway (anonymous :free models)',url:'https://ai-gateway.kilo.ai/api/v1/chat/completions',
   model:'minimax/minimax-m2.1:free',freeModel:/^[a-z0-9][a-z0-9._/-]{0,79}:free$/,rpm:3,perHour:180,perDay:2000,concurrent:2,publicPrompts:true}),
+ // Paid models share this endpoint (x402 payment headers); only billing_mode "free" models are allowed
+ // and no payment header is ever sent (blockrun.ai/api/v1/models, 2026-11-10).
+ blockrun:Object.freeze({name:'BlockRun free tier (anonymous, NVIDIA-hosted open models)',url:'https://blockrun.ai/api/v1/chat/completions',
+  model:'nvidia/nemotron-3-super-120b',
+  freeModel:/^(?:nvidia\/nemotron-3-super-120b|nvidia\/nemotron-3-ultra-550b|nvidia\/nemotron-3-nano-omni-30b-a3b-reasoning|nvidia\/nemotron-3\.5-bolt|poolside\/laguna-xs-2\.1)$/,
+  rpm:10,perDay:1000,concurrent:2,publicPrompts:true}),
+ // Distributed volunteer GPUs (kudos, no money). Async: submit, poll, cancel. Anonymous key.
+ horde:Object.freeze({name:'AI Horde (distributed volunteer workers, anonymous)',kind:'horde',
+  url:'https://aihorde.net/api/v2/generate/text/async',statusUrl:'https://aihorde.net/api/v2/generate/text/status/',
+  model:'qwen3.8-27b-int4,lmstudio/Qwen3.6-35B-A3B,lmstudio/Qwen3.5-9B,koboldcpp/Llama-3.2-3B-Instruct',
+  freeModel:/^[A-Za-z0-9][A-Za-z0-9._/:-]{0,79}(?:,[A-Za-z0-9][A-Za-z0-9._/:-]{0,79}){0,5}$/,
+  rpm:10,perDay:500,concurrent:3,publicPrompts:true}),
 });
+export const HORDE_ANONYMOUS_KEY='0000000000';
+export const HORDE_CLIENT_AGENT='federation-firewall-gateway:1:github.com/Satofumi-Goto/federation-runtime';
 export const FREE_AI_ROLES=Object.freeze(['plan','implement','review','test','reply-advice','summarize']);
 const CODE_ROLES=new Set(['plan','implement','review','test']);
 export const FREE_AI_LIMITS=Object.freeze({maxMessages:16,maxMessageChars:24000,maxTotalChars:48000,
@@ -28,7 +43,8 @@ export const FREE_AI_POLICY=Object.freeze({version:'federation-firewall-free-ai/
   codeRolesAllowed:!p.publicPrompts})),
  roles:FREE_AI_ROLES,requestFields:['provider','role','messages','maxTokens','model'],
  responseFields:['ok','provider','model','text','error','retryAfterSeconds'],
- auditFields:['type','at','method','status','client','provider','role'],promptOrAnswerLogged:false});
+ auditFields:['type','at','method','status','client','provider','role'],promptOrAnswerLogged:false,
+ personalDataToPublicPromptProviders:false});
 const CTRL=/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 export function loadFreeAiConfig(env=process.env){
  if(env.FIREWALL_FREE_AI_ENABLED!=='true')return {enabled:false,reason:'flag-off'};
@@ -75,7 +91,8 @@ function reportedCost(data){
  const u=data?.usage;
  return u&&typeof u==='object'?[u.cost,u.total_cost].some(v=>typeof v==='number'&&v>0):false;
 }
-export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now}={}){
+const HORDE_WAIT_MS=50000,HORDE_POLL_MS=3000;
+export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms))}={}){
  const cfg=loadFreeAiConfig(env);
  const state=Object.fromEntries(Object.keys(FREE_AI_PROVIDERS).map(p=>[p,{minute:[],hour:[],day:'',dayCount:0,active:0,coolUntil:0,stoppedDay:''}]));
  const today=()=>new Date(clock()).toISOString().slice(0,10);
@@ -91,11 +108,43 @@ export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now}={}
   s.minute.push(now);s.hour.push(now);s.dayCount++;s.active++;return null;
  }
  function chain(command){
-  const allowed=cfg.providers.filter(p=>!(CODE_ROLES.has(command.role)&&FREE_AI_PROVIDERS[p].publicPrompts));
+  // Code roles and personal contact data never go to providers that may log prompts.
+  const personal=hasPersonalData(command.messages.map(m=>m.content));
+  const allowed=cfg.providers.filter(p=>!((CODE_ROLES.has(command.role)||personal)&&FREE_AI_PROVIDERS[p].publicPrompts));
   return command.provider?allowed.filter(p=>p===command.provider):allowed;
+ }
+ async function callHorde(p,command,model){
+  const spec=FREE_AI_PROVIDERS[p];
+  const headers={'Content-Type':'application/json',Accept:'application/json',apikey:HORDE_ANONYMOUS_KEY,'Client-Agent':HORDE_CLIENT_AGENT};
+  const prompt=command.messages.map(m=>'### '+m.role[0].toUpperCase()+m.role.slice(1)+':\n'+m.content).join('\n')+'\n### Assistant:\n';
+  const submit=await fetchImpl(spec.url,{method:'POST',redirect:'manual',credentials:'omit',headers,
+   body:JSON.stringify({prompt,models:model.split(','),params:{max_length:Math.max(16,Math.min(command.maxTokens,512)),
+    max_context_length:4096,temperature:0.2,n:1}}),signal:AbortSignal.timeout(15000)});
+  if(submit.status===429||submit.status>=500){state[p].coolUntil=clock()+60000;throw Error('upstream-'+submit.status);}
+  if(submit.status!==200&&submit.status!==202)throw Error('upstream-'+submit.status);
+  const job=await readBoundedJson(submit,8192);
+  if(typeof job?.id!=='string'||!/^[A-Za-z0-9-]{8,64}$/.test(job.id))throw Error('bad-job');
+  const statusUrl=spec.statusUrl+job.id,deadline=clock()+HORDE_WAIT_MS;
+  const cancel=()=>fetchImpl(statusUrl,{method:'DELETE',redirect:'manual',credentials:'omit',headers,signal:AbortSignal.timeout(5000)}).catch(()=>{});
+  while(true){
+   await sleep(HORDE_POLL_MS);
+   const r=await fetchImpl(statusUrl,{method:'GET',redirect:'manual',credentials:'omit',headers,signal:AbortSignal.timeout(10000)});
+   if(r.status===200){
+    const st=await readBoundedJson(r,FREE_AI_LIMITS.maxResponseBytes);
+    if(st?.faulted||st?.is_possible===false){await cancel();throw Error(st?.faulted?'faulted':'no-worker-available');}
+    if(st?.done){
+     const g=Array.isArray(st.generations)?st.generations[0]:null;
+     const text=typeof g?.text==='string'&&g.text.trim()?g.text.trim().slice(0,FREE_AI_LIMITS.maxAnswerChars):null;
+     if(!text)throw Error('empty-answer');
+     return {model:typeof g.model==='string'?g.model.slice(0,80):model,text};
+    }
+   }else if(r.status!==429&&r.status<500)throw Error('upstream-'+r.status);
+   if(clock()>=deadline){await cancel();throw Error('timeout-cancelled');}
+  }
  }
  async function call(p,command){
   const model=command.model||cfg.models[p];
+  if(FREE_AI_PROVIDERS[p].kind==='horde')return callHorde(p,command,model);
   // No Authorization header: these endpoints are anonymous. Redirects are refused.
   const response=await fetchImpl(FREE_AI_PROVIDERS[p].url,{method:'POST',redirect:'manual',credentials:'omit',
    headers:{'Content-Type':'application/json',Accept:'application/json'},

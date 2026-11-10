@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
 import {createGatewayServer} from '../server.mjs';
 import {signHeaders} from '../auth.mjs';
-import {FREE_AI_PATH,FREE_AI_PROVIDERS,FREE_AI_POLICY,loadFreeAiConfig,parseFreeAiCommand} from '../freeAi.mjs';
+import {FREE_AI_PATH,FREE_AI_PROVIDERS,FREE_AI_POLICY,loadFreeAiConfig,parseFreeAiCommand,createFreeAi,HORDE_ANONYMOUS_KEY} from '../freeAi.mjs';
 
 const NOW=Date.parse('2026-11-10T08:30:00.000Z');
 const key=randomBytes(32).toString('base64url');
@@ -36,7 +36,7 @@ const recorder=handler=>{
 };
 
 test('only keyless providers are listed and none of them takes a key',()=>{
- assert.deepEqual(Object.keys(FREE_AI_PROVIDERS).sort(),['kilo','llm7','ovh']);
+ assert.deepEqual(Object.keys(FREE_AI_PROVIDERS).sort(),['blockrun','horde','kilo','llm7','ovh']);
  assert.equal(FREE_AI_POLICY.keyless,true);
  assert.equal(FREE_AI_POLICY.credentialsStoredOrForwarded,false);
  assert.equal(FREE_AI_POLICY.defaultEnabled,false);
@@ -126,4 +126,64 @@ test('per-minute ceiling, paid-usage signal and status endpoint',async()=>{
   assert.equal(JSON.stringify(status).includes(key),false);
  });
  assert.equal(calls.filter(c=>c.url.includes('ovh')).length,2);
+});
+
+test('dedicated FIREWALL_FREE_AI_FEDERATION_KEY works without FIREWALL_CLIENT_KEYS_JSON and only for free AI',async()=>{
+ const dedicated=randomBytes(32).toString('base64url');
+ const {calls,fetchImpl}=recorder(()=>ok('OK'));
+ await withGateway({env:{FIREWALL_FREE_AI_ENABLED:'true',FIREWALL_FREE_AI_FEDERATION_KEY:dedicated},fetchImpl},async origin=>{
+  const body=ask('summarize');
+  const signed=signHeaders({client:'federation',key:Buffer.from(dedicated,'base64url'),body,path:FREE_AI_PATH,time:NOW});
+  const res=await fetch(origin+FREE_AI_PATH,{method:'POST',body,headers:{'content-type':'application/json',...signed}});
+  assert.equal(res.status,200);
+  const wrong=signHeaders({client:'federation',key:randomBytes(32),body,path:FREE_AI_PATH,time:NOW});
+  assert.equal((await fetch(origin+FREE_AI_PATH,{method:'POST',body,headers:{'content-type':'application/json',...wrong}})).status,401);
+  const probeBody='{"routeId":"japan-holidays"}';
+  const probe=signHeaders({client:'federation',key:Buffer.from(dedicated,'base64url'),body:probeBody,time:NOW});
+  const other=await fetch(origin+'/api/v1/shadow/probe',{method:'POST',body:probeBody,headers:{'content-type':'application/json',...probe}});
+  assert.equal(other.status,503);
+ });
+ assert.equal(calls.length,1);
+});
+const cmd=(role='reply-advice',provider)=>({role,provider,maxTokens:64,messages:[{role:'user',content:'Reply OK'}]});
+const json=(status,data)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json'}});
+
+test('BlockRun accepts only its free models and sends no payment or auth header',async()=>{
+ assert.equal(loadFreeAiConfig({FIREWALL_FREE_AI_ENABLED:'true',FIREWALL_FREE_AI_BLOCKRUN_MODEL:'openai/gpt-5'}).reason,'model-invalid');
+ const calls=[];
+ const ai=createFreeAi({env:{FIREWALL_FREE_AI_ENABLED:'true',FIREWALL_FREE_AI_PROVIDERS:'blockrun'},clock:()=>NOW,
+  fetchImpl:async(url,init)=>{calls.push({url,init});return json(200,{choices:[{message:{content:'OK'}}]});}});
+ const r=await ai.chat('federation',cmd());
+ assert.equal(r.status,200);assert.equal(r.result.provider,'blockrun');
+ assert.equal(calls[0].url,'https://blockrun.ai/api/v1/chat/completions');
+ assert.equal(JSON.parse(calls[0].init.body).model,'nvidia/nemotron-3-super-120b');
+ for(const h of Object.keys(calls[0].init.headers))assert.ok(!/authorization|payment|x402/i.test(h),h);
+});
+
+test('AI Horde: anonymous submit, poll until done, never for code roles',async()=>{
+ const calls=[];let polls=0;
+ const ai=createFreeAi({env:{FIREWALL_FREE_AI_ENABLED:'true',FIREWALL_FREE_AI_PROVIDERS:'horde'},clock:()=>NOW,sleep:async()=>{},
+  fetchImpl:async(url,init)=>{calls.push({url,method:init.method,headers:init.headers});
+   if(init.method==='POST')return json(202,{id:'job-1234abcd'});
+   polls++;return json(200,polls<2?{done:false,is_possible:true}:{done:true,generations:[{text:' OK ',model:'qwen3.8-27b-int4'}]});}});
+ const r=await ai.chat('federation',cmd());
+ assert.equal(r.status,200);assert.equal(r.result.text,'OK');
+ assert.equal(calls[0].url,'https://aihorde.net/api/v2/generate/text/async');
+ assert.equal(calls[0].headers.apikey,HORDE_ANONYMOUS_KEY);
+ assert.ok(calls[1].url.endsWith('/generate/text/status/job-1234abcd'));
+ const code=await ai.chat('federation',cmd('implement'));
+ assert.equal(code.status,400);assert.equal(code.result.error,'provider-not-allowed-for-role');
+});
+
+test('AI Horde: impossible and timed-out jobs are cancelled',async()=>{
+ let t=NOW;const methods=[];
+ const make=state=>createFreeAi({env:{FIREWALL_FREE_AI_ENABLED:'true',FIREWALL_FREE_AI_PROVIDERS:'horde'},clock:()=>t,
+  sleep:async()=>{t+=20000;},fetchImpl:async(url,init)=>{methods.push(init.method);
+   return init.method==='POST'?json(202,{id:'job-1234abcd'}):json(200,state);}});
+ let r=await make({done:false,is_possible:false}).chat('federation',cmd());
+ assert.equal(r.status,503);assert.ok(methods.includes('DELETE'));
+ methods.length=0;
+ r=await make({done:false,is_possible:true}).chat('federation',cmd());
+ assert.equal(r.status,503);assert.deepEqual(r.result.attempts[0],{provider:'horde',failed:'timeout-cancelled'});
+ assert.equal(methods.at(-1),'DELETE');
 });
