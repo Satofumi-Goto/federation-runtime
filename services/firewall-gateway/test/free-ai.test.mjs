@@ -1,0 +1,129 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {randomBytes} from 'node:crypto';
+import {createGatewayServer} from '../server.mjs';
+import {signHeaders} from '../auth.mjs';
+import {FREE_AI_PATH,FREE_AI_PROVIDERS,FREE_AI_POLICY,loadFreeAiConfig,parseFreeAiCommand} from '../freeAi.mjs';
+
+const NOW=Date.parse('2026-11-10T08:30:00.000Z');
+const key=randomBytes(32).toString('base64url');
+const env=(over={})=>({FIREWALL_CLIENT_KEYS_JSON:JSON.stringify({federation:key,seneschal:key}),
+ FIREWALL_FREE_AI_ENABLED:'true',...over});
+const ask=(role='reply-advice',extra={})=>JSON.stringify({role,messages:[{role:'user',content:'Reply OK'}],...extra});
+const ok=text=>new Response(JSON.stringify({choices:[{message:{role:'assistant',content:text}}]}),
+ {status:200,headers:{'content-type':'application/json'}});
+
+async function withGateway(options,run){
+ const app=createGatewayServer({clock:()=>NOW,auditSink:()=>{},...options});
+ await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
+ const origin='http://127.0.0.1:'+app.server.address().port;
+ try{await run(origin,app);}finally{await new Promise(resolve=>app.server.close(resolve));}
+}
+async function post(origin,body,{client='federation',headers={}}={}){
+ const signed=signHeaders({client,key:Buffer.from(key,'base64url'),body,path:FREE_AI_PATH,time:NOW});
+ const response=await fetch(origin+FREE_AI_PATH,{method:'POST',body,
+  headers:{'content-type':'application/json',...signed,...headers}});
+ return {status:response.status,data:await response.json()};
+}
+const recorder=handler=>{
+ const calls=[];
+ const fetchImpl=async(url,init)=>{
+  if(!String(url).startsWith('https://'))return fetch(url,init);
+  calls.push({url:String(url),headers:init.headers,body:JSON.parse(init.body)});
+  return handler(String(url),calls.length);
+ };
+ return {calls,fetchImpl};
+};
+
+test('only keyless providers are listed and none of them takes a key',()=>{
+ assert.deepEqual(Object.keys(FREE_AI_PROVIDERS).sort(),['kilo','llm7','ovh']);
+ assert.equal(FREE_AI_POLICY.keyless,true);
+ assert.equal(FREE_AI_POLICY.credentialsStoredOrForwarded,false);
+ assert.equal(FREE_AI_POLICY.defaultEnabled,false);
+ for(const p of FREE_AI_POLICY.providers)assert.equal(p.codeRolesAllowed,!p.publicPrompts);
+});
+
+test('relay stays OFF unless explicitly enabled; models and clients are validated',()=>{
+ assert.equal(loadFreeAiConfig({}).enabled,false);
+ assert.equal(loadFreeAiConfig(env()).enabled,true);
+ assert.deepEqual([...loadFreeAiConfig(env()).clients],['federation']);
+ assert.equal(loadFreeAiConfig(env({FIREWALL_FREE_AI_CLIENT_IDS:'unknown'})).reason,'clients-invalid');
+ assert.equal(loadFreeAiConfig(env({FIREWALL_FREE_AI_PROVIDERS:'ovh,openai'})).reason,'providers-invalid');
+ assert.equal(loadFreeAiConfig(env({FIREWALL_FREE_AI_KILO_MODEL:'paid/model'})).reason,'model-invalid');
+ assert.equal(loadFreeAiConfig(env({FIREWALL_FREE_AI_KILO_MODEL:'qwen/qwen3-coder:free'})).models.kilo,'qwen/qwen3-coder:free');
+});
+
+test('command parser rejects unknown fields, roles, providers and oversize prompts',()=>{
+ assert.equal(parseFreeAiCommand(ask()).ok,true);
+ assert.equal(parseFreeAiCommand(ask('deploy')).error,'invalid-role');
+ assert.equal(parseFreeAiCommand(ask('summarize',{provider:'openai'})).error,'invalid-provider');
+ assert.equal(parseFreeAiCommand(ask('summarize',{url:'https://evil.example'})).error,'invalid-request');
+ assert.equal(parseFreeAiCommand(ask('summarize',{model:'x'})).error,'invalid-model');
+ assert.equal(parseFreeAiCommand(ask('summarize',{provider:'kilo',model:'paid/model'})).error,'invalid-model');
+ assert.equal(parseFreeAiCommand(JSON.stringify({role:'summarize',messages:[{role:'user',content:'x'.repeat(24001)}]})).error,'invalid-messages');
+ assert.equal(parseFreeAiCommand(JSON.stringify({role:'summarize',messages:[{role:'system',content:'only system'}]})).error,'invalid-messages');
+ assert.equal(parseFreeAiCommand(ask('summarize',{maxTokens:4096})).error,'invalid-max-tokens');
+});
+
+test('unsigned, browser and disabled requests never reach a provider',async()=>{
+ const {calls,fetchImpl}=recorder(()=>ok('OK'));
+ await withGateway({env:env(),fetchImpl},async origin=>{
+  const unsigned=await fetch(origin+FREE_AI_PATH,{method:'POST',headers:{'content-type':'application/json'},body:ask()});
+  assert.equal(unsigned.status,401);
+  assert.equal((await post(origin,ask(),{headers:{origin:'https://evil.example'}})).status,403);
+  assert.equal((await post(origin,ask(),{client:'seneschal'})).data.error,'client-not-allowed');
+ });
+ await withGateway({env:env({FIREWALL_FREE_AI_ENABLED:'false'}),fetchImpl},async origin=>{
+  assert.equal((await post(origin,ask())).data.error,'free-ai-disabled');
+ });
+ assert.equal(calls.length,0);
+});
+
+test('anonymous call: no Authorization header, first answer wins, fallback on 429',async()=>{
+ const {calls,fetchImpl}=recorder(url=>url.includes('ovh')?new Response('{}',{status:429}):ok('OK from llm7'));
+ await withGateway({env:env(),fetchImpl},async origin=>{
+  const res=await post(origin,ask('summarize'));
+  assert.equal(res.status,200);
+  assert.equal(res.data.provider,'llm7');
+  assert.equal(res.data.paidCalls,0);
+  assert.deepEqual(res.data.attempts.map(a=>a.provider),['ovh','llm7']);
+ });
+ assert.equal(calls.length,2);
+ for(const c of calls){
+  assert.equal(Object.keys(c.headers).some(h=>/authorization|api-?key/i.test(h)),false);
+  assert.equal(c.body.stream,false);
+ }
+});
+
+test('code roles never go to providers that may log prompts',async()=>{
+ const {calls,fetchImpl}=recorder(()=>ok('diff'));
+ await withGateway({env:env(),fetchImpl},async origin=>{
+  const res=await post(origin,ask('implement'));
+  assert.equal(res.data.provider,'ovh');
+  assert.equal((await post(origin,ask('review',{provider:'kilo'}))).data.error,'provider-not-allowed-for-role');
+ });
+ assert.ok(calls.every(c=>c.url.includes('ovh')));
+});
+
+test('per-minute ceiling, paid-usage signal and status endpoint',async()=>{
+ const {calls,fetchImpl}=recorder(url=>url.includes('kilo')
+  ?new Response(JSON.stringify({choices:[{message:{content:'x'}}],usage:{cost:0.01}}),{status:200,headers:{'content-type':'application/json'}})
+  :ok('OK'));
+ await withGateway({env:env(),fetchImpl},async origin=>{
+  assert.equal((await post(origin,ask('implement'))).status,200);
+  assert.equal((await post(origin,ask('implement'))).status,200);
+  const third=await post(origin,ask('implement'));
+  assert.equal(third.status,429);
+  assert.equal(third.data.error,'rate-limited');
+  const paid=await post(origin,ask('summarize',{provider:'kilo'}));
+  assert.equal(paid.status,503);
+  assert.equal(paid.data.attempts[0].failed,'paid-usage-reported');
+  const again=await post(origin,ask('summarize',{provider:'kilo'}));
+  assert.equal(again.data.attempts[0].skipped,'stopped-today');
+  const status=await (await fetch(origin+'/api/free-ai')).json();
+  assert.equal(status.enabled,true);
+  assert.equal(status.usageToday.ovh,2);
+  assert.equal(JSON.stringify(status).includes(key),false);
+ });
+ assert.equal(calls.filter(c=>c.url.includes('ovh')).length,2);
+});

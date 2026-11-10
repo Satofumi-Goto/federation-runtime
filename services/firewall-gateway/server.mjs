@@ -9,6 +9,7 @@ import {createEgress} from './egress.mjs';
 import {createActivityAcquisition,validateEventQuery,NEWS_SOURCE_IDS,TOKYO_EVENT_SOURCE_IDS} from './activitySources.mjs';
 import {createGithubCanaryVerifier} from './githubCanary.mjs';
 import {createAssistant,parseAssistantCommand,ASSISTANT_PATH,ASSISTANT_MAX_BODY,ASSISTANT_POLICY} from './assistant.mjs';
+import {createFreeAi,parseFreeAiCommand,FREE_AI_PATH,FREE_AI_MAX_BODY,FREE_AI_POLICY} from './freeAi.mjs';
 import {publicCatalog,publicClients,SIGNING_CONTRACT} from './policy.mjs';
 import {renderConsole} from './ui.mjs';
 import {independentApps,INDEPENDENT_ORIGINS,SERVING_HOSTS} from './origins.mjs';
@@ -147,6 +148,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
   return {ok:true};
  }
  const assistant=createAssistant({env,fetchImpl,clock});
+ const freeAi=createFreeAi({env,fetchImpl,clock});
  const signedClients=new Set();
  const head=gitHead(env);
  const selfOrigin=INDEPENDENT_ORIGINS['firewall-gateway'];
@@ -169,6 +171,14 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       type:'firewall.assistant.request',at:new Date(clock()).toISOString(),
       method:req.method,status:res.statusCode,client:askClient,characterId:askCharacter,
       historyCount:askHistory,
+    }));}catch{/* Observability must not interrupt responses. */}
+  });
+  // Free AI audit: never record messages, answers, signature or IP.
+  let freeClient=null,freeProvider=null,freeRole=null;
+  if(path===FREE_AI_PATH)res.once('finish',()=>{
+    try{auditSink(JSON.stringify({
+      type:'firewall.free-ai.request',at:new Date(clock()).toISOString(),
+      method:req.method,status:res.statusCode,client:freeClient,provider:freeProvider,role:freeRole,
     }));}catch{/* Observability must not interrupt responses. */}
   });
   if(!req.url||req.url.length>1024)return reply(res,414,{ok:false,reason:'invalid-target'});
@@ -194,6 +204,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       registeredApps:publicClients().appCount,canaryEgressEnabled:egress.liveEnabled,
       activityAcquisitionEnabled:activitySourcesEnabled,
       assistantEnabled:assistant.enabled,
+      freeAiEnabled:freeAi.enabled,
       sharedSecurity:{mode:storeMode,required:requireShared,
        configured:!!sharedStore,distributed:!!sharedStore},
       productionReady:false,cutoverEnabled:false,legacyConnectionsPreserved:true,
@@ -209,7 +220,8 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
    }
    if(req.method==='GET'&&path==='/api/clients')
     return reply(res,200,{...publicClients(auth.configuredIds()),signing:SIGNING_CONTRACT,
-      assistant:{...ASSISTANT_POLICY,enabled:assistant.enabled}});
+      assistant:{...ASSISTANT_POLICY,enabled:assistant.enabled},
+      freeAi:{...FREE_AI_POLICY,enabled:freeAi.enabled}});
    if(req.method==='GET'&&(path==='/'||path==='/console')){
     const nonce=randomBytes(18).toString('base64url');
     return page(res,200,renderConsole({nonce,canaryEnabled:egress.liveEnabled,configuredIds:auth.configuredIds()}),nonce);
@@ -269,6 +281,31 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     askCharacter=parsed.command.character?.id||null;
     askHistory=parsed.command.history.length;
     const result=await assistant.ask(identity.client,parsed.command);
+    return reply(res,result.status,result.result,
+      result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});
+   }
+   if(req.method==='GET'&&path==='/api/free-ai')
+    return reply(res,200,{...FREE_AI_POLICY,...freeAi.info()});
+   if(path===FREE_AI_PATH){
+    // Keyless providers only; transport is HMAC server-to-server like the assistant.
+    if(req.headers.origin||req.headers.cookie||req.headers.authorization)
+     return reply(res,403,{ok:false,error:'server-to-server-only'});
+    if(req.method!=='POST')return reply(res,405,{ok:false,error:'method-not-allowed'});
+    if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
+     return reply(res,415,{ok:false,error:'json-required'});
+    let body;
+    try{body=await limitedBody(req,FREE_AI_MAX_BODY);}
+    catch{return reply(res,413,{ok:false,error:'request-too-large'},{Connection:'close'});}
+    const identity=auth.verify(req,body,path);
+    if(!identity.ok)return reply(res,identity.status,{ok:false,error:identity.reason});
+    const shared=await enforceShared(identity.client,req.headers['x-fw-nonce'],'free-ai');
+    if(!shared.ok)return reply(res,shared.status,{ok:false,error:shared.reason});
+    freeClient=identity.client;signedClients.add(identity.client);
+    const parsed=parseFreeAiCommand(body);
+    if(!parsed.ok)return reply(res,parsed.status,{ok:false,error:parsed.error});
+    freeRole=parsed.command.role;
+    const result=await freeAi.chat(identity.client,parsed.command);
+    freeProvider=result.result.provider||null;
     return reply(res,result.status,result.result,
       result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});
    }
@@ -361,7 +398,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  server.headersTimeout=12000;
  server.keepAliveTimeout=3500;
  server.on('clientError',(_error,socket)=>{if(socket.writable)socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');});
- return {server,auth,access,egress,githubCanary,assistant};
+ return {server,auth,access,egress,githubCanary,assistant,freeAi};
 }
 export function startServer(env=process.env){
  const port=Number(env.PORT||8789);

@@ -1,0 +1,137 @@
+import {readBoundedJson} from './egress.mjs';
+import {CLIENT_IDS} from './policy.mjs';
+// Keyless free AI relay. Every provider here works WITHOUT an account or API key,
+// so no credential is stored, forwarded or logged; nothing here can be billed.
+// Callers are the nine signed family apps (HMAC server-to-server, no browsers).
+// OFF unless FIREWALL_FREE_AI_ENABLED=true. Prompts and answers are never logged.
+export const FREE_AI_PATH='/api/v1/free-ai/chat';
+export const FREE_AI_MAX_BODY=65536;
+// rpm/perDay are the gateway's own ceilings, set at or below each provider's
+// published anonymous limit (2026-11-10, per IP). publicPrompts=true: the
+// provider may log prompts, so source-code roles must never be sent there.
+export const FREE_AI_PROVIDERS=Object.freeze({
+ ovh:Object.freeze({name:'OVHcloud AI Endpoints (anonymous)',url:'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions',
+  model:'Qwen3-Coder-30B-A3B-Instruct',freeModel:/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/,rpm:2,perDay:1000,concurrent:1,publicPrompts:false}),
+ llm7:Object.freeze({name:'LLM7.io (anonymous)',url:'https://api.llm7.io/v1/chat/completions',
+  model:'gpt-oss:20b',freeModel:/^[A-Za-z0-9][A-Za-z0-9.:_/-]{0,79}$/,rpm:20,perDay:1000,concurrent:2,publicPrompts:true}),
+ kilo:Object.freeze({name:'Kilo AI Gateway (anonymous :free models)',url:'https://ai-gateway.kilo.ai/api/v1/chat/completions',
+  model:'minimax/minimax-m2.1:free',freeModel:/^[a-z0-9][a-z0-9._/-]{0,79}:free$/,rpm:3,perHour:180,perDay:2000,concurrent:2,publicPrompts:true}),
+});
+export const FREE_AI_ROLES=Object.freeze(['plan','implement','review','test','reply-advice','summarize']);
+const CODE_ROLES=new Set(['plan','implement','review','test']);
+export const FREE_AI_LIMITS=Object.freeze({maxMessages:16,maxMessageChars:24000,maxTotalChars:48000,
+ maxOutputTokens:2048,maxResponseBytes:262144,timeoutMs:60000,maxAnswerChars:32000});
+export const FREE_AI_POLICY=Object.freeze({version:'federation-firewall-free-ai/1',path:FREE_AI_PATH,defaultEnabled:false,
+ keyless:true,credentialsStoredOrForwarded:false,signedServerToServerOnly:true,paidCalls:0,
+ providers:Object.entries(FREE_AI_PROVIDERS).map(([id,p])=>({id,name:p.name,defaultModel:p.model,
+  requestsPerMinute:p.rpm,requestsPerDay:p.perDay,concurrent:p.concurrent,publicPrompts:p.publicPrompts,
+  codeRolesAllowed:!p.publicPrompts})),
+ roles:FREE_AI_ROLES,requestFields:['provider','role','messages','maxTokens','model'],
+ responseFields:['ok','provider','model','text','error','retryAfterSeconds'],
+ auditFields:['type','at','method','status','client','provider','role'],promptOrAnswerLogged:false});
+const CTRL=/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
+export function loadFreeAiConfig(env=process.env){
+ if(env.FIREWALL_FREE_AI_ENABLED!=='true')return {enabled:false,reason:'flag-off'};
+ const ids=(env.FIREWALL_FREE_AI_CLIENT_IDS||'federation').split(',').filter(Boolean);
+ if(!ids.length||ids.some(id=>!CLIENT_IDS.includes(id))||new Set(ids).size!==ids.length)
+  return {enabled:false,reason:'clients-invalid'};
+ const providers=(env.FIREWALL_FREE_AI_PROVIDERS||Object.keys(FREE_AI_PROVIDERS).join(',')).split(',').filter(Boolean);
+ if(!providers.length||providers.some(p=>!Object.hasOwn(FREE_AI_PROVIDERS,p)))return {enabled:false,reason:'providers-invalid'};
+ const models={};
+ for(const p of providers){
+  const raw=env['FIREWALL_FREE_AI_'+p.toUpperCase()+'_MODEL'];
+  const model=raw===undefined||raw===''?FREE_AI_PROVIDERS[p].model:raw;
+  if(!FREE_AI_PROVIDERS[p].freeModel.test(model))return {enabled:false,reason:'model-invalid'};
+  models[p]=model;
+ }
+ return {enabled:true,clients:new Set(ids),providers,models};
+}
+export function parseFreeAiCommand(body){
+ let q;
+ try{q=JSON.parse(body);}catch{return {ok:false,status:400,error:'invalid-json'};}
+ if(!q||typeof q!=='object'||Array.isArray(q))return {ok:false,status:400,error:'invalid-request'};
+ if(Object.keys(q).some(k=>!['provider','role','messages','maxTokens','model'].includes(k)))
+  return {ok:false,status:400,error:'invalid-request'};
+ if(!FREE_AI_ROLES.includes(q.role))return {ok:false,status:400,error:'invalid-role'};
+ if(q.provider!==undefined&&!Object.hasOwn(FREE_AI_PROVIDERS,q.provider))return {ok:false,status:400,error:'invalid-provider'};
+ if(q.model!==undefined&&(q.provider===undefined||typeof q.model!=='string'||!FREE_AI_PROVIDERS[q.provider].freeModel.test(q.model)))
+  return {ok:false,status:400,error:'invalid-model'};
+ const L=FREE_AI_LIMITS,m=q.messages;
+ if(!Array.isArray(m)||!m.length||m.length>L.maxMessages
+  ||!m.every(x=>x&&typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).every(k=>k==='role'||k==='content')
+   &&['system','user','assistant'].includes(x.role)&&typeof x.content==='string'&&x.content.length<=L.maxMessageChars&&!CTRL.test(x.content))
+  ||m.reduce((n,x)=>n+x.content.length,0)>L.maxTotalChars||!m.some(x=>x.role==='user'&&x.content.trim()))
+  return {ok:false,status:400,error:'invalid-messages'};
+ const maxTokens=q.maxTokens===undefined?1024:q.maxTokens;
+ if(!Number.isInteger(maxTokens)||maxTokens<1||maxTokens>L.maxOutputTokens)return {ok:false,status:400,error:'invalid-max-tokens'};
+ return {ok:true,command:{provider:q.provider,role:q.role,model:q.model,maxTokens,
+  messages:m.map(x=>({role:x.role,content:x.content}))}};
+}
+function answerOf(data){
+ const text=data?.choices?.[0]?.message?.content;
+ return typeof text==='string'&&text.trim()?text.trim().slice(0,FREE_AI_LIMITS.maxAnswerChars):null;
+}
+function reportedCost(data){
+ const u=data?.usage;
+ return u&&typeof u==='object'?[u.cost,u.total_cost].some(v=>typeof v==='number'&&v>0):false;
+}
+export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now}={}){
+ const cfg=loadFreeAiConfig(env);
+ const state=Object.fromEntries(Object.keys(FREE_AI_PROVIDERS).map(p=>[p,{minute:[],hour:[],day:'',dayCount:0,active:0,coolUntil:0,stoppedDay:''}]));
+ const today=()=>new Date(clock()).toISOString().slice(0,10);
+ function admit(p){
+  const s=state[p],spec=FREE_AI_PROVIDERS[p],now=clock(),d=today();
+  if(s.day!==d){s.day=d;s.dayCount=0;}
+  s.minute=s.minute.filter(t=>now-t<60000);s.hour=s.hour.filter(t=>now-t<3600000);
+  if(s.stoppedDay===d)return 'stopped-today';
+  if(now<s.coolUntil)return 'cooling-down';
+  if(s.active>=spec.concurrent)return 'busy';
+  if(s.minute.length>=spec.rpm||(spec.perHour&&s.hour.length>=spec.perHour))return 'rate-limited';
+  if(s.dayCount>=spec.perDay)return 'daily-cap';
+  s.minute.push(now);s.hour.push(now);s.dayCount++;s.active++;return null;
+ }
+ function chain(command){
+  const allowed=cfg.providers.filter(p=>!(CODE_ROLES.has(command.role)&&FREE_AI_PROVIDERS[p].publicPrompts));
+  return command.provider?allowed.filter(p=>p===command.provider):allowed;
+ }
+ async function call(p,command){
+  const model=command.model||cfg.models[p];
+  // No Authorization header: these endpoints are anonymous. Redirects are refused.
+  const response=await fetchImpl(FREE_AI_PROVIDERS[p].url,{method:'POST',redirect:'manual',credentials:'omit',
+   headers:{'Content-Type':'application/json',Accept:'application/json'},
+   body:JSON.stringify({model,messages:command.messages,max_tokens:command.maxTokens,temperature:0.2,stream:false}),
+   signal:AbortSignal.timeout(FREE_AI_LIMITS.timeoutMs)});
+  if(response.status===429||response.status>=500){state[p].coolUntil=clock()+60000;throw Error('upstream-'+response.status);}
+  if(response.status===401||response.status===402||response.status===403){state[p].stoppedDay=today();throw Error('upstream-'+response.status);}
+  if(response.status!==200)throw Error('upstream-'+response.status);
+  const data=await readBoundedJson(response,FREE_AI_LIMITS.maxResponseBytes);
+  if(reportedCost(data)){state[p].stoppedDay=today();throw Error('paid-usage-reported');}
+  const text=answerOf(data);
+  if(!text)throw Error('empty-answer');
+  return {model,text};
+ }
+ async function chat(client,command){
+  if(!cfg.enabled)return {status:503,result:{ok:false,error:'free-ai-disabled'}};
+  if(!cfg.clients.has(client))return {status:403,result:{ok:false,error:'client-not-allowed'}};
+  const order=chain(command);
+  if(!order.length)return {status:400,result:{ok:false,error:'provider-not-allowed-for-role'}};
+  const attempts=[];
+  for(const p of order){
+   const refused=admit(p);
+   if(refused){attempts.push({provider:p,skipped:refused});continue;}
+   try{
+    const answer=await call(p,command);
+    attempts.push({provider:p,ok:true});
+    return {status:200,result:{ok:true,provider:p,model:answer.model,text:answer.text,attempts,paidCalls:0}};
+   }catch(error){
+    attempts.push({provider:p,failed:String(error?.message||'network').slice(0,40).replace(/[^a-z0-9-]/g,'')||'network'});
+   }finally{state[p].active--;}
+  }
+  const limited=attempts.every(a=>a.skipped&&a.skipped!=='stopped-today');
+  return {status:limited?429:503,result:{ok:false,error:limited?'rate-limited':'no-free-provider-answered',attempts,
+   ...(limited?{retryAfterSeconds:60}:{}),paidCalls:0}};
+ }
+ return {chat,get enabled(){return cfg.enabled;},
+  info:()=>({enabled:cfg.enabled,reason:cfg.enabled?'armed':cfg.reason,providers:cfg.enabled?cfg.providers:[],
+   usageToday:Object.fromEntries(Object.entries(state).map(([p,s])=>[p,s.day===today()?s.dayCount:0]))})};
+}
