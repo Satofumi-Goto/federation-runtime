@@ -29,8 +29,31 @@ export const FREE_AI_PROVIDERS=Object.freeze({
   model:'qwen3.8-27b-int4,lmstudio/Qwen3.6-35B-A3B,lmstudio/Qwen3.5-9B,koboldcpp/Llama-3.2-3B-Instruct',
   freeModel:/^[A-Za-z0-9][A-Za-z0-9._/:-]{0,79}(?:,[A-Za-z0-9][A-Za-z0-9._/:-]{0,79}){0,5}$/,
   rpm:10,perDay:500,concurrent:3,publicPrompts:true}),
+ // Classic anonymous text endpoint (GET, prompt in the path, plain-text answer). The newer
+ // gen.pollinations.ai chat API needs a key, so it is not used. The URL may be logged.
+ pollinations:Object.freeze({name:'Pollinations classic text (anonymous tier)',kind:'pollinations',
+  url:'https://text.pollinations.ai/',model:'openai',freeModel:/^[a-z0-9][a-z0-9.-]{0,39}$/,
+  rpm:4,perDay:500,concurrent:1,publicPrompts:true,maxPromptChars:1800}),
+ // Ollama-style generate API, no key, 5 requests/minute/IP, small models, non-commercial use only.
+ mlvoca:Object.freeze({name:'mlvoca free LLM API (anonymous, non-commercial)',kind:'ollama',
+  url:'https://mlvoca.com/api/generate',model:'deepseek-r1:1.5b',freeModel:/^(?:tinyllama|deepseek-r1:1\.5b)$/,
+  rpm:4,perDay:500,concurrent:1,publicPrompts:true,maxPromptChars:8000}),
 });
 export const HORDE_ANONYMOUS_KEY='0000000000';
+async function readBoundedText(response,maxBytes){
+ if(response.type==='opaqueredirect'||response.status>=300&&response.status<400)throw Error('redirect-refused');
+ const declared=Number(response.headers.get('content-length'));
+ if(Number.isFinite(declared)&&declared>maxBytes)throw Error('response-too-large');
+ if(!response.body?.getReader)throw Error('invalid-stream');
+ const reader=response.body.getReader(),parts=[];let size=0;
+ try{for(;;){const {value,done}=await reader.read();if(done)break;size+=value.byteLength;
+  if(size>maxBytes){await reader.cancel().catch(()=>{});throw Error('response-too-large');}parts.push(value);}}
+ finally{reader.releaseLock();}
+ const bytes=new Uint8Array(size);let at=0;for(const p of parts){bytes.set(p,at);at+=p.byteLength;}
+ return new TextDecoder('utf-8',{fatal:true}).decode(bytes);
+}
+const flatPrompt=messages=>messages.map(m=>(m.role==='user'?'':m.role+': ')+m.content).join('\n');
+const stripThink=text=>text.replace(/<think>[\s\S]*?<\/think>/g,'').trim();
 export const HORDE_CLIENT_AGENT='federation-firewall-gateway:1:github.com/Satofumi-Goto/federation-runtime';
 export const FREE_AI_ROLES=Object.freeze(['plan','implement','review','test','reply-advice','summarize']);
 const CODE_ROLES=new Set(['plan','implement','review','test']);
@@ -144,7 +167,26 @@ export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sle
  }
  async function call(p,command){
   const model=command.model||cfg.models[p];
-  if(FREE_AI_PROVIDERS[p].kind==='horde')return callHorde(p,command,model);
+  const spec=FREE_AI_PROVIDERS[p];
+  if(spec.kind==='horde')return callHorde(p,command,model);
+  if(spec.kind==='pollinations'||spec.kind==='ollama'){
+   const prompt=flatPrompt(command.messages);
+   if(prompt.length>spec.maxPromptChars)throw Error('prompt-too-large');
+   const response=spec.kind==='pollinations'
+    ?await fetchImpl(spec.url+encodeURIComponent(prompt)+'?model='+encodeURIComponent(model)+'&private=true',
+      {method:'GET',redirect:'manual',credentials:'omit',headers:{Accept:'text/plain'},signal:AbortSignal.timeout(FREE_AI_LIMITS.timeoutMs)})
+    :await fetchImpl(spec.url,{method:'POST',redirect:'manual',credentials:'omit',
+      headers:{'Content-Type':'application/json',Accept:'application/json'},
+      body:JSON.stringify({model,prompt,stream:false,options:{num_predict:command.maxTokens}}),signal:AbortSignal.timeout(FREE_AI_LIMITS.timeoutMs)});
+   if(response.status===429||response.status>=500){state[p].coolUntil=clock()+60000;throw Error('upstream-'+response.status);}
+   if(response.status===401||response.status===402||response.status===403){state[p].stoppedDay=today();throw Error('upstream-'+response.status);}
+   if(response.status!==200)throw Error('upstream-'+response.status);
+   const raw=spec.kind==='pollinations'?await readBoundedText(response,FREE_AI_LIMITS.maxResponseBytes)
+    :(await readBoundedJson(response,FREE_AI_LIMITS.maxResponseBytes))?.response;
+   const text=typeof raw==='string'?stripThink(raw).slice(0,FREE_AI_LIMITS.maxAnswerChars):'';
+   if(!text)throw Error('empty-answer');
+   return {model,text};
+  }
   // No Authorization header: these endpoints are anonymous. Redirects are refused.
   const response=await fetchImpl(FREE_AI_PROVIDERS[p].url,{method:'POST',redirect:'manual',credentials:'omit',
    headers:{'Content-Type':'application/json',Accept:'application/json'},
