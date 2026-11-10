@@ -127,3 +127,21 @@ test('per-minute ceiling, paid-usage signal and status endpoint',async()=>{
  });
  assert.equal(calls.filter(c=>c.url.includes('ovh')).length,2);
 });
+
+test('dedicated FIREWALL_FREE_AI_FEDERATION_KEY works without FIREWALL_CLIENT_KEYS_JSON and only for free AI',async()=>{
+ const dedicated=randomBytes(32).toString('base64url');
+ const {calls,fetchImpl}=recorder(()=>ok('OK'));
+ await withGateway({env:{FIREWALL_FREE_AI_ENABLED:'true',FIREWALL_FREE_AI_FEDERATION_KEY:dedicated},fetchImpl},async origin=>{
+  const body=ask('summarize');
+  const signed=signHeaders({client:'federation',key:Buffer.from(dedicated,'base64url'),body,path:FREE_AI_PATH,time:NOW});
+  const res=await fetch(origin+FREE_AI_PATH,{method:'POST',body,headers:{'content-type':'application/json',...signed}});
+  assert.equal(res.status,200);
+  const wrong=signHeaders({client:'federation',key:randomBytes(32),body,path:FREE_AI_PATH,time:NOW});
+  assert.equal((await fetch(origin+FREE_AI_PATH,{method:'POST',body,headers:{'content-type':'application/json',...wrong}})).status,401);
+  const probeBody='{"routeId":"japan-holidays"}';
+  const probe=signHeaders({client:'federation',key:Buffer.from(dedicated,'base64url'),body:probeBody,time:NOW});
+  const other=await fetch(origin+'/api/v1/shadow/probe',{method:'POST',body:probeBody,headers:{'content-type':'application/json',...probe}});
+  assert.equal(other.status,503);
+ });
+ assert.equal(calls.length,1);
+});

@@ -121,6 +121,6 @@ Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更し
 ## Keyless free AI relay (default OFF)
 
 - `POST /api/v1/free-ai/chat` relays OpenAI-style chat to providers that need **no account or API key**: OVHcloud AI Endpoints (anonymous), LLM7.io (anonymous) and Kilo AI Gateway (`:free` models only). No credential is stored or forwarded.
-- HMAC server-to-server only (`federation` client by default, `FIREWALL_FREE_AI_CLIENT_IDS`), Origin/Cookie/Authorization rejected. OFF unless `FIREWALL_FREE_AI_ENABLED=true`.
+- HMAC server-to-server only (`federation` client by default, `FIREWALL_FREE_AI_CLIENT_IDS`), Origin/Cookie/Authorization rejected. `FIREWALL_FREE_AI_FEDERATION_KEY` is a dedicated federation key valid for this route only (no change to `FIREWALL_CLIENT_KEYS_JSON`). OFF unless `FIREWALL_FREE_AI_ENABLED=true`.
 - Per-provider ceilings at or below the anonymous limits; 429/5xx cool down 60 s, 401/402/403 or any reported cost stop that provider for the day. LLM7 and Kilo may log prompts, so `plan`/`implement`/`review`/`test` roles are refused for them.
 - `GET /api/free-ai` and `/api/clients` (`freeAi`) publish the provider list, limits and today's counts. Prompts and answers are never logged.

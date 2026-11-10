@@ -150,6 +150,12 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  }
  const assistant=createAssistant({env,fetchImpl,clock});
  const freeAi=createFreeAi({env,fetchImpl,clock});
+ // Dedicated free-AI credential for the federation client only. It authorizes
+ // nothing else and leaves FIREWALL_CLIENT_KEYS_JSON untouched.
+ const freeAiKey=env.FIREWALL_FREE_AI_FEDERATION_KEY||'';
+ const freeAiAuth=createAuthenticator({env:{
+   FIREWALL_CLIENT_KEYS_JSON:freeAiKey?JSON.stringify({federation:freeAiKey}):''
+ },clock});
  const signedClients=new Set();
  const head=gitHead(env);
  const selfOrigin=INDEPENDENT_ORIGINS['firewall-gateway'];
@@ -322,7 +328,11 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     let body;
     try{body=await limitedBody(req,FREE_AI_MAX_BODY);}
     catch{return reply(res,413,{ok:false,error:'request-too-large'},{Connection:'close'});}
-    const identity=auth.verify(req,body,path);
+    let identity=freeAiAuth.configured&&req.headers['x-fw-client']==='federation'
+      ?freeAiAuth.verify(req,body,path):auth.verify(req,body,path);
+    if(!identity.ok&&freeAiAuth.configured&&req.headers['x-fw-client']==='federation'
+      &&['signature-invalid'].includes(identity.reason)&&auth.configured)
+      identity=auth.verify(req,body,path);
     if(!identity.ok)return reply(res,identity.status,{ok:false,error:identity.reason});
     const shared=await enforceShared(identity.client,req.headers['x-fw-nonce'],'free-ai');
     if(!shared.ok)return reply(res,shared.status,{ok:false,error:shared.reason});
