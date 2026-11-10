@@ -64,7 +64,16 @@ export const HORDE_CLIENT_AGENT='federation-firewall-gateway:1:github.com/Satofu
 export const FREE_AI_ROLES=Object.freeze(['plan','implement','review','test','reply-advice','summarize']);
 const CODE_ROLES=new Set(['plan','implement','review','test']);
 // Per calling app, across all providers: a leaked key cannot turn the gateway into an open relay.
+// Floor of the per-calling-app cap. The live cap is the larger of this and the sum of the
+// enabled providers' own ceilings, so adding a provider adds usable capacity instead of
+// every provider being refused together once one app's minute is used up.
 export const FREE_AI_CLIENT_LIMITS=Object.freeze({perMinute:30,perDay:3000});
+export function clientLimitsFor(providers){
+ let perMinute=0,perDay=0;
+ for(const p of providers){const spec=FREE_AI_PROVIDERS[p];if(spec){perMinute+=spec.rpm;perDay+=spec.perDay;}}
+ return Object.freeze({perMinute:Math.max(FREE_AI_CLIENT_LIMITS.perMinute,perMinute),
+  perDay:Math.max(FREE_AI_CLIENT_LIMITS.perDay,perDay)});
+}
 export const FREE_AI_LIMITS=Object.freeze({maxMessages:16,maxMessageChars:24000,maxTotalChars:48000,
  maxOutputTokens:2048,maxResponseBytes:262144,timeoutMs:60000,maxAnswerChars:32000});
 export const FREE_AI_POLICY=Object.freeze({version:'federation-firewall-free-ai/1',path:FREE_AI_PATH,defaultEnabled:false,
@@ -210,12 +219,13 @@ export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sle
   return {model,text};
  }
  const clientUse=new Map();
+ const clientLimits=clientLimitsFor(cfg.enabled?cfg.providers:[]);
  function admitClient(client){
   const now=clock(),d=today();
   let u=clientUse.get(client);
   if(!u||u.day!==d){u={day:d,count:0,minute:[]};clientUse.set(client,u);}
   u.minute=u.minute.filter(t=>now-t<60000);
-  if(u.minute.length>=FREE_AI_CLIENT_LIMITS.perMinute||u.count>=FREE_AI_CLIENT_LIMITS.perDay)return false;
+  if(u.minute.length>=clientLimits.perMinute||u.count>=clientLimits.perDay)return false;
   u.minute.push(now);u.count++;return true;
  }
  async function chat(client,command){
@@ -241,6 +251,6 @@ export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sle
    ...(limited?{retryAfterSeconds:60}:{}),paidCalls:0}};
  }
  return {chat,get enabled(){return cfg.enabled;},
-  info:()=>({enabled:cfg.enabled,reason:cfg.enabled?'armed':cfg.reason,providers:cfg.enabled?cfg.providers:[],
+  info:()=>({enabled:cfg.enabled,reason:cfg.enabled?'armed':cfg.reason,providers:cfg.enabled?cfg.providers:[],clientLimits,
    usageToday:Object.fromEntries(Object.entries(state).map(([p,s])=>[p,s.day===today()?s.dayCount:0]))})};
 }

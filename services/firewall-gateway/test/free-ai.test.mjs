@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
 import {createGatewayServer} from '../server.mjs';
 import {signHeaders} from '../auth.mjs';
-import {FREE_AI_PATH,FREE_AI_PROVIDERS,FREE_AI_POLICY,loadFreeAiConfig,parseFreeAiCommand,createFreeAi,HORDE_ANONYMOUS_KEY} from '../freeAi.mjs';
+import {FREE_AI_PATH,FREE_AI_PROVIDERS,FREE_AI_POLICY,loadFreeAiConfig,parseFreeAiCommand,createFreeAi,HORDE_ANONYMOUS_KEY,FREE_AI_CLIENT_LIMITS,clientLimitsFor} from '../freeAi.mjs';
 
 const NOW=Date.parse('2026-11-10T08:30:00.000Z');
 const key=randomBytes(32).toString('base64url');
@@ -214,6 +214,15 @@ test('mlvoca: Ollama generate, small models only, think block removed, never cod
  assert.equal(r.result.text,'OK');assert.equal(calls[0].url,'https://mlvoca.com/api/generate');
  assert.equal(calls[0].body.model,'deepseek-r1:1.5b');assert.equal(calls[0].body.stream,false);
  assert.equal((await ai.chat('federation',cmd('review'))).result.error,'provider-not-allowed-for-role');
+});
+
+test('the per-app cap grows with the enabled providers so one busy minute does not refuse them all',()=>{
+ const all=Object.keys(FREE_AI_PROVIDERS);
+ const sum=all.reduce((a,p)=>a+FREE_AI_PROVIDERS[p].rpm,0),day=all.reduce((a,p)=>a+FREE_AI_PROVIDERS[p].perDay,0);
+ assert.deepEqual({...clientLimitsFor(all)},{perMinute:sum,perDay:day});
+ assert.ok(sum>FREE_AI_CLIENT_LIMITS.perMinute);
+ assert.deepEqual({...clientLimitsFor(['ovh'])},{...FREE_AI_CLIENT_LIMITS});
+ assert.deepEqual({...clientLimitsFor([])},{...FREE_AI_CLIENT_LIMITS});
 });
 
 test('one calling app is capped per minute across all providers',async()=>{
