@@ -12,11 +12,11 @@ export const FREE_AI_MAX_BODY=65536;
 // provider may log prompts, so source-code roles must never be sent there.
 export const FREE_AI_PROVIDERS=Object.freeze({
  ovh:Object.freeze({name:'OVHcloud AI Endpoints (anonymous)',url:'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions',
-  model:'Qwen3-Coder-30B-A3B-Instruct',freeModel:/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/,rpm:2,perDay:1000,concurrent:1,publicPrompts:false}),
+  model:'qwen-3-8-27b',freeModel:/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/,rpm:2,perDay:1000,concurrent:1,publicPrompts:false}),
  llm7:Object.freeze({name:'LLM7.io (anonymous)',url:'https://api.llm7.io/v1/chat/completions',
   model:'gpt-oss:20b',freeModel:/^[A-Za-z0-9][A-Za-z0-9.:_/-]{0,79}$/,rpm:20,perDay:1000,concurrent:2,publicPrompts:true}),
  kilo:Object.freeze({name:'Kilo AI Gateway (anonymous :free models)',url:'https://ai-gateway.kilo.ai/api/v1/chat/completions',
-  model:'minimax/minimax-m2.1:free',freeModel:/^[a-z0-9][a-z0-9._/-]{0,79}:free$/,rpm:3,perHour:180,perDay:2000,concurrent:2,publicPrompts:true}),
+  model:'nvidia/nemotron-3.5-super-vl:free',freeModel:/^[a-z0-9][a-z0-9._/-]{0,79}:free$/,rpm:3,perHour:180,perDay:2000,concurrent:2,publicPrompts:true}),
  // Paid models share this endpoint (x402 payment headers); only billing_mode "free" models are allowed
  // and no payment header is ever sent (blockrun.ai/api/v1/models, 2026-11-10).
  blockrun:Object.freeze({name:'BlockRun free tier (anonymous, NVIDIA-hosted open models)',url:'https://blockrun.ai/api/v1/chat/completions',
