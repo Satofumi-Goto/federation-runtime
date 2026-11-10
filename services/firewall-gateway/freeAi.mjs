@@ -1,5 +1,6 @@
 import {readBoundedJson} from './egress.mjs';
 import {CLIENT_IDS} from './policy.mjs';
+import {hasPersonalData} from './hardening.mjs';
 // Keyless free AI relay. Every provider here works WITHOUT an account or API key,
 // so no credential is stored, forwarded or logged; nothing here can be billed.
 // Callers are the nine signed family apps (HMAC server-to-server, no browsers).
@@ -28,7 +29,8 @@ export const FREE_AI_POLICY=Object.freeze({version:'federation-firewall-free-ai/
   codeRolesAllowed:!p.publicPrompts})),
  roles:FREE_AI_ROLES,requestFields:['provider','role','messages','maxTokens','model'],
  responseFields:['ok','provider','model','text','error','retryAfterSeconds'],
- auditFields:['type','at','method','status','client','provider','role'],promptOrAnswerLogged:false});
+ auditFields:['type','at','method','status','client','provider','role'],promptOrAnswerLogged:false,
+ personalDataToPublicPromptProviders:false});
 const CTRL=/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 export function loadFreeAiConfig(env=process.env){
  if(env.FIREWALL_FREE_AI_ENABLED!=='true')return {enabled:false,reason:'flag-off'};
@@ -91,7 +93,9 @@ export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now}={}
   s.minute.push(now);s.hour.push(now);s.dayCount++;s.active++;return null;
  }
  function chain(command){
-  const allowed=cfg.providers.filter(p=>!(CODE_ROLES.has(command.role)&&FREE_AI_PROVIDERS[p].publicPrompts));
+  // Code roles and personal contact data never go to providers that may log prompts.
+  const personal=hasPersonalData(command.messages.map(m=>m.content));
+  const allowed=cfg.providers.filter(p=>!((CODE_ROLES.has(command.role)||personal)&&FREE_AI_PROVIDERS[p].publicPrompts));
   return command.provider?allowed.filter(p=>p===command.provider):allowed;
  }
  async function call(p,command){

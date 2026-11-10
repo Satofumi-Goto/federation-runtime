@@ -40,3 +40,12 @@ export function findSecret(texts){
  }
  return null;
 }
+// Personal contact data (e-mail, Japanese phone numbers). Providers that may
+// log prompts (publicPrompts) are skipped when a message contains these.
+export const PERSONAL_PATTERNS=Object.freeze([
+ ['email',/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/],
+ ['phone-jp',/(?<![0-9])(?:0[789]0-?[0-9]{4}-?[0-9]{4}|0[1-9][0-9]{0,3}-[0-9]{1,4}-[0-9]{4}|\+81[-\s]?[1-9][0-9]{0,3}[-\s]?[0-9]{1,4}[-\s]?[0-9]{4})(?![0-9])/],
+]);
+export function hasPersonalData(texts){
+ return texts.some(t=>typeof t==='string'&&PERSONAL_PATTERNS.some(([,re])=>re.test(t)));
+}
