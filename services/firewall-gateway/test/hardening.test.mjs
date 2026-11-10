@@ -6,7 +6,7 @@ import {createGatewayServer} from '../server.mjs';
 import {signHeaders} from '../auth.mjs';
 import {FREE_AI_PATH} from '../freeAi.mjs';
 import {ASSISTANT_PATH} from '../assistant.mjs';
-import {findSecret,precheckSignedHeaders,SECRET_PATTERNS} from '../hardening.mjs';
+import {findSecret,precheckSignedHeaders,SECRET_PATTERNS,hasPersonalData} from '../hardening.mjs';
 
 const NOW=Date.parse('2026-11-10T09:00:00.000Z');
 const key=randomBytes(32).toString('base64url');
@@ -118,4 +118,40 @@ test('security headers, socket caps and audit of activity/admin requests',async(
  });
  await withGateway({env:env({FIREWALL_MAX_CONNECTIONS:'9999'})},async(_o,app)=>assert.equal(app.server.maxConnections,128));
  await withGateway({env:env({FIREWALL_MAX_CONNECTIONS:'32'})},async(_o,app)=>assert.equal(app.server.maxConnections,32));
+});
+
+test('personal contact data is detected; ordinary numbers and versions pass',()=>{
+ for(const t of ['連絡先 taro.yamada@example.co.jp','携帯 090-1234-5678','09012345678 に電話','代表 03-1234-5678','+81 3 1234 5678'])
+  assert.equal(hasPersonalData([t]),true,t);
+ for(const t of ['v2026-11-10','IRR -12.13%','73 trips/day','node@22','2,080.5 kWh/day','commit e87ef24'])
+  assert.equal(hasPersonalData([t]),false,t);
+});
+
+test('free AI never sends personal contact data to providers that may log prompts',async()=>{
+ const seen=[];
+ const fetchImpl=async url=>{seen.push(String(url));
+  return new Response(JSON.stringify({choices:[{message:{content:'OK'}}]}),{status:200,headers:{'content-type':'application/json'}});};
+ await withGateway({env:env({FIREWALL_FREE_AI_PROVIDERS:'llm7,kilo,ovh'}),fetchImpl},async origin=>{
+  const body=JSON.stringify({role:'reply-advice',messages:[{role:'user',content:'返信先は hanako@example.com'}]});
+  const r=await signedPost(origin,FREE_AI_PATH,body);
+  assert.equal(r.status,200);assert.equal(r.data.provider,'ovh');
+  assert.ok(seen.every(u=>u.includes('ovh.net')));
+  const plain=JSON.stringify({role:'reply-advice',messages:[{role:'user',content:'要約して'}]});
+  const p=await signedPost(origin,FREE_AI_PATH,plain);
+  assert.equal(p.status,200);assert.equal(p.data.provider,'llm7');
+ });
+ await withGateway({env:env({FIREWALL_FREE_AI_PROVIDERS:'llm7,kilo'}),fetchImpl},async origin=>{
+  const body=JSON.stringify({role:'summarize',messages:[{role:'user',content:'090-1234-5678 に連絡'}]});
+  const r=await signedPost(origin,FREE_AI_PATH,body);
+  assert.equal(r.status,400);assert.equal(r.data.error,'provider-not-allowed-for-role');
+ });
+});
+
+test('JSON responses carry a deny-all Content-Security-Policy',async()=>{
+ await withGateway({env:env()},async origin=>{
+  for(const path of ['/healthz','/api/status','/api/clients','/nope']){
+   const r=await fetch(origin+path);
+   assert.match(r.headers.get('content-security-policy')||'',/^default-src 'none'; frame-ancestors 'none'/,path);
+  }
+ });
 });

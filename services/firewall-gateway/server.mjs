@@ -29,7 +29,8 @@ const SECURITY_HEADERS=Object.freeze({
 });
 const safeCsp=nonce=>"default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; img-src 'none'; script-src 'none'; connect-src 'none'; style-src 'nonce-"+nonce+"'";
 function reply(res,status,data,extra={}){
- const headers={...SECURITY_HEADERS,'Content-Type':'application/json; charset=utf-8',...extra};
+ const headers={...SECURITY_HEADERS,'Content-Type':'application/json; charset=utf-8',
+  'Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",...extra};
  res.writeHead(status,headers);res.end(JSON.stringify(data));
 }
 function page(res,status,body,nonce){
