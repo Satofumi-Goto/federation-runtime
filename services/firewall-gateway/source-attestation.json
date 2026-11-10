@@ -1,7 +1,7 @@
 {
   "schema": "federation.firewall-source-attestation/1",
   "canonicalRepository": "Satofumi-Goto/federation-portal",
-  "canonicalCommit": "fcdc6936932b14f96ed586caa45aac0b67684fcf",
+  "canonicalCommit": "bdec0115ab7afafffc006ce21ac551e1570db53c",
   "sourcePath": "services/firewall-gateway",
   "distributionRepository": "Satofumi-Goto/federation-runtime",
   "verification": "full-file-Git-blob-sha1",
@@ -24,8 +24,8 @@
     "package.json": "99d449cc8a3c84cd2ef8b1c7fd11b23e60827095",
     "policy.mjs": "723ddcca9a7d6b01dc28755921a347c4fbb44071",
     "renderValkey.mjs": "419f40966f97a3541a79448d6ac47a56bdbeb2ff",
-    "server.mjs": "825730ecda90ad0a179b4ca5d778e69a656df2e8",
-    "store.mjs": "04044635aafd460655ac761f89c2786b00776c8d",
+    "server.mjs": "082d60f9e214cca525d2880c8e39cf875d6b7158",
+    "store.mjs": "a334097344503c841e71ccd0392b3b41f378da55",
     "test/acquisition-ledger.test.mjs": "39c7412b729a287cdf3405a2006a4858f8a6f218",
     "test/activity-acquisition.test.mjs": "e2aac3d781ab3bf23183e42e9b46db0a2183e7d3",
     "test/activity-anilist-fixed.test.mjs": "3d6ee47fe85eb7ab5b3098360323a3e29c28c3f4",
@@ -48,7 +48,7 @@
     "test/render-valkey.test.mjs": "3159a11782e028d58e11b6668703d06e89938951",
     "test/server.test.mjs": "78082190f7da504db21c4db4996014ed57fee159",
     "test/shared-route-guards.test.mjs": "052e4bb09abe763773a54f3e4326882c28393d66",
-    "test/store.test.mjs": "bbcd7ec368317c4637404cfb027aac9ef1b6b21f",
+    "test/store.test.mjs": "ab1897300775a718e04c46ca6d04641bba6a0af6",
     "test/ui-csp.test.mjs": "03ea0b110330ec29e4f11058762ba0b9ff6dc27d",
     "tools/edge-negative-check.mjs": "74b07a7a411633ee04484d7739b39bea746e5042",
     "ui.mjs": "b85fd453aad97a347b6d8d82bfa24b54fb220e90"
