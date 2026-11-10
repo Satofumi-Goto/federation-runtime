@@ -13,6 +13,12 @@ export const FREE_AI_MAX_BODY=65536;
 export const FREE_AI_PROVIDERS=Object.freeze({
  ovh:Object.freeze({name:'OVHcloud AI Endpoints (anonymous)',url:'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions',
   model:'Qwen3.8-27B',freeModel:/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/,rpm:2,perDay:1000,concurrent:1,publicPrompts:false}),
+ // OVH limits anonymous use per model (2/min/IP), so each extra model is its own lane
+ // (catalog.endpoints.ai.ovh.net/rest/v1/models_v2, name field, 2026-11-10).
+ ovhgpt:Object.freeze({name:'OVHcloud AI Endpoints gpt-oss-120b (anonymous)',url:'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions',
+  model:'gpt-oss-120b',freeModel:/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/,rpm:2,perDay:1000,concurrent:1,publicPrompts:false}),
+ ovhllama:Object.freeze({name:'OVHcloud AI Endpoints Llama 3.3 70B (anonymous)',url:'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions',
+  model:'Meta-Llama-3_3-70B-Instruct',freeModel:/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/,rpm:2,perDay:1000,concurrent:1,publicPrompts:false}),
  llm7:Object.freeze({name:'LLM7.io (anonymous)',url:'https://api.llm7.io/v1/chat/completions',
   model:'gpt-oss:20b',freeModel:/^[A-Za-z0-9][A-Za-z0-9.:_/-]{0,79}$/,rpm:20,perDay:1000,concurrent:2,publicPrompts:true}),
  kilo:Object.freeze({name:'Kilo AI Gateway (anonymous :free models)',url:'https://ai-gateway.kilo.ai/api/v1/chat/completions',
