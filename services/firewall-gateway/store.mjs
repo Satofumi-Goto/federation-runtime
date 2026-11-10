@@ -110,7 +110,10 @@ export function storeFromEnv(env=process.env,{fetchImpl=fetch,clock=Date.now}={}
 }
 
 // Async guards built on the store. Both deny when the store cannot answer.
-export function createSharedGuards(store,{replayTtlMs=120000,windowMs=60000,limits={total:20,perClient:6}}={}){
+// Keyless free-AI relays cost nothing upstream and have their own per-provider and per-client limits
+// (freeAi.mjs), so they get a separate bucket instead of the paid-upstream budget.
+export const SHARED_BUDGET_POOLS=Object.freeze({'free-ai':Object.freeze({total:60,perClient:30})});
+export function createSharedGuards(store,{replayTtlMs=120000,windowMs=60000,limits={total:20,perClient:6},pools=SHARED_BUDGET_POOLS}={}){
  if(!store)throw Error('store-required');
  async function replay(client,nonce){
   const r=await store.claimOnce('nonce:'+client+':'+nonce,replayTtlMs);
@@ -118,14 +121,16 @@ export function createSharedGuards(store,{replayTtlMs=120000,windowMs=60000,limi
   if(!r.claimed)return {ok:false,status:409,reason:'replay-refused'};
   return {ok:true};
  }
- async function budget(client,now=Date.now()){
+ async function budget(client,now=Date.now(),pool=null){
   const bucket=String(Math.floor(now/windowMs));
-  const total=await store.increment('budget:total:'+bucket,windowMs);
+  const own=pool&&Object.hasOwn(pools,pool)?pools[pool]:null;
+  const lim=own||limits,prefix=own?'budget:'+pool+':':'budget:';
+  const total=await store.increment(prefix+'total:'+bucket,windowMs);
   if(!total.ok)return {ok:false,status:503,reason:'budget-store-unavailable'};
-  if(total.count>limits.total)return {ok:false,status:429,reason:'upstream-budget-exhausted',retryAfterSeconds:Math.ceil(windowMs/1000)};
-  const mine=await store.increment('budget:client:'+client+':'+bucket,windowMs);
+  if(total.count>lim.total)return {ok:false,status:429,reason:'upstream-budget-exhausted',retryAfterSeconds:Math.ceil(windowMs/1000)};
+  const mine=await store.increment(prefix+'client:'+client+':'+bucket,windowMs);
   if(!mine.ok)return {ok:false,status:503,reason:'budget-store-unavailable'};
-  if(mine.count>limits.perClient)return {ok:false,status:429,reason:'upstream-budget-exhausted',retryAfterSeconds:Math.ceil(windowMs/1000)};
+  if(mine.count>lim.perClient)return {ok:false,status:429,reason:'upstream-budget-exhausted',retryAfterSeconds:Math.ceil(windowMs/1000)};
   return {ok:true};
  }
  return {replay,budget,distributed:store.distributed,kind:store.kind};

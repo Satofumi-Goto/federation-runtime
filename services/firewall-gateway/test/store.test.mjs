@@ -66,6 +66,19 @@ test('request budget is shared across instances and resets per window',async()=>
  assert.equal((await b.budget('activity',now)).ok,true);
 });
 
+test('free-ai relays use their own bucket; the paid budget is unchanged',async()=>{
+ const now=3_000_001*60000;
+ const redis=fakeRedis({clock:()=>now});
+ const g=createSharedGuards(createRedisRestStore({url:URL_OK,token:TOKEN,fetchImpl:redis.fetchImpl}),
+   {limits:{total:3,perClient:2},pools:{'free-ai':{total:5,perClient:3}}});
+ assert.equal((await g.budget('federation',now)).ok,true);
+ assert.equal((await g.budget('federation',now)).ok,true);
+ assert.equal((await g.budget('federation',now)).status,429,'paid budget still 2 per client');
+ for(let i=0;i<3;i++)assert.equal((await g.budget('federation',now,'free-ai')).ok,true);
+ assert.equal((await g.budget('federation',now,'free-ai')).status,429,'free-ai bucket has its own per-client cap');
+ assert.equal((await g.budget('federation',now,'unknown-pool')).status,429,'unknown pool falls back to the paid budget');
+});
+
 test('store failures fail closed (deny), never allow',async()=>{
  const broken=[
   async()=>{throw Error('network');},
