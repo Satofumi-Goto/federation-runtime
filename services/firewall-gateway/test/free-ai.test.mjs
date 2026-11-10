@@ -215,3 +215,11 @@ test('mlvoca: Ollama generate, small models only, think block removed, never cod
  assert.equal(calls[0].body.model,'deepseek-r1:1.5b');assert.equal(calls[0].body.stream,false);
  assert.equal((await ai.chat('federation',cmd('review'))).result.error,'provider-not-allowed-for-role');
 });
+
+test('one calling app is capped per minute across all providers',async()=>{
+ const ai=createFreeAi({env:{FIREWALL_FREE_AI_ENABLED:'true',FIREWALL_FREE_AI_PROVIDERS:'llm7'},clock:()=>NOW,
+  fetchImpl:async()=>json(200,{choices:[{message:{content:'OK'}}]})});
+ let last;
+ for(let i=0;i<31;i++)last=await ai.chat('federation',cmd());
+ assert.equal(last.status,429);assert.equal(last.result.error,'client-rate-limited');
+});
