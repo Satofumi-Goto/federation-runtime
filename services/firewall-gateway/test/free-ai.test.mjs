@@ -36,7 +36,7 @@ const recorder=handler=>{
 };
 
 test('only keyless providers are listed and none of them takes a key',()=>{
- assert.deepEqual(Object.keys(FREE_AI_PROVIDERS).sort(),['blockrun','horde','kilo','llm7','ovh']);
+ assert.deepEqual(Object.keys(FREE_AI_PROVIDERS).sort(),['blockrun','horde','kilo','llm7','mlvoca','ovh','pollinations']);
  assert.equal(FREE_AI_POLICY.keyless,true);
  assert.equal(FREE_AI_POLICY.credentialsStoredOrForwarded,false);
  assert.equal(FREE_AI_POLICY.defaultEnabled,false);
@@ -186,4 +186,28 @@ test('AI Horde: impossible and timed-out jobs are cancelled',async()=>{
  r=await make({done:false,is_possible:true}).chat('federation',cmd());
  assert.equal(r.status,503);assert.deepEqual(r.result.attempts[0],{provider:'horde',failed:'timeout-cancelled'});
  assert.equal(methods.at(-1),'DELETE');
+});
+
+test('Pollinations classic: GET with the prompt in the path, no key, plain-text answer',async()=>{
+ const calls=[];
+ const ai=createFreeAi({env:{FIREWALL_FREE_AI_ENABLED:'true',FIREWALL_FREE_AI_PROVIDERS:'pollinations'},clock:()=>NOW,
+  fetchImpl:async(url,init)=>{calls.push({url,init});return new Response('OK',{status:200,headers:{'content-type':'text/plain'}});}});
+ const r=await ai.chat('federation',cmd());
+ assert.equal(r.status,200);assert.equal(r.result.text,'OK');
+ assert.ok(calls[0].url.startsWith('https://text.pollinations.ai/Reply%20OK?model=openai'));
+ assert.equal(calls[0].init.method,'GET');
+ for(const h of Object.keys(calls[0].init.headers))assert.ok(!/authorization/i.test(h));
+ const long=await ai.chat('federation',{...cmd(),messages:[{role:'user',content:'x'.repeat(2000)}]});
+ assert.equal(long.status,503);assert.deepEqual(long.result.attempts.at(-1),{provider:'pollinations',failed:'prompt-too-large'});
+});
+
+test('mlvoca: Ollama generate, small models only, think block removed, never code roles',async()=>{
+ assert.equal(loadFreeAiConfig({FIREWALL_FREE_AI_ENABLED:'true',FIREWALL_FREE_AI_MLVOCA_MODEL:'llama3:70b'}).reason,'model-invalid');
+ const calls=[];
+ const ai=createFreeAi({env:{FIREWALL_FREE_AI_ENABLED:'true',FIREWALL_FREE_AI_PROVIDERS:'mlvoca'},clock:()=>NOW,
+  fetchImpl:async(url,init)=>{calls.push({url,body:JSON.parse(init.body)});return json(200,{response:'<think>hmm</think> OK',done:true});}});
+ const r=await ai.chat('federation',cmd());
+ assert.equal(r.result.text,'OK');assert.equal(calls[0].url,'https://mlvoca.com/api/generate');
+ assert.equal(calls[0].body.model,'deepseek-r1:1.5b');assert.equal(calls[0].body.stream,false);
+ assert.equal((await ai.chat('federation',cmd('review'))).result.error,'provider-not-allowed-for-role');
 });
