@@ -1,7 +1,7 @@
 {
   "schema": "federation.firewall-source-attestation/1",
   "canonicalRepository": "Satofumi-Goto/federation-portal",
-  "canonicalCommit": "769ab6bd9f76999b79f40e3e60e131ba6f937d22",
+  "canonicalCommit": "1862a79db7f75d5766bcffb570e6d71507047b72",
   "sourcePath": "services/firewall-gateway",
   "distributionRepository": "Satofumi-Goto/federation-runtime",
   "verification": "full-file-Git-blob-sha1",
@@ -16,7 +16,7 @@
     "auth.mjs": "d07ce12fbd27a4a1519322e444056ed1ed440051",
     "callers.mjs": "f7845ba9c060912f3d7e8badc2df4f90ac84522f",
     "egress.mjs": "0d080a97097e3609756d444f958929273b8690bb",
-    "freeAi.mjs": "fdb739ce32b69ffa03d69f4eeac3eab4475c25a6",
+    "freeAi.mjs": "14582888cbed649b7d82e065d7867c7ecb85f3ea",
     "githubCanary.mjs": "3e70f51d652ec24355723fe3d04ef69b6304e1ee",
     "hardening.mjs": "ea74e50c6c20dac74fec9ba07506e09f7d3549d2",
     "holidayParity.mjs": "37befeb825b5e5d2e3f2e8502fda743e026cc21c",
