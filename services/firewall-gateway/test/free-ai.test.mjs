@@ -248,3 +248,17 @@ test('audit records per-provider reason codes but never prompt or answer text',a
  assert.equal(raw.includes('PROMPT-TEXT'),false);
  assert.equal(raw.includes('ANSWER-TEXT'),false);
 });
+
+test('reasoning models get at least 1024 upstream tokens; truncated thinking is reported, never returned',async()=>{
+ const {calls,fetchImpl}=recorder((url,n)=>n===1
+  ?new Response(JSON.stringify({choices:[{finish_reason:'length',message:{content:'',reasoning_content:'THINKING-TEXT'}}]}),{status:200,headers:{'content-type':'application/json'}})
+  :new Response(JSON.stringify({choices:[{message:{content:[{type:'text',text:'PART-A '},{type:'text',text:'PART-B'}]}}]}),{status:200,headers:{'content-type':'application/json'}}));
+ await withGateway({env:env(),fetchImpl},async origin=>{
+  const res=await post(origin,ask('summarize',{maxTokens:64}));
+  assert.equal(res.status,200);
+  assert.equal(res.data.text,'PART-A PART-B');
+  assert.equal(res.data.attempts[0].failed,'reasoning-truncated');
+  assert.equal(JSON.stringify(res.data).includes('THINKING-TEXT'),false);
+ });
+ assert.ok(calls.every(c=>(c.body.max_tokens??c.body.options?.num_predict??1024)>=1024));
+});

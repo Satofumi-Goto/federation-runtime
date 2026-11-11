@@ -124,8 +124,20 @@ export function parseFreeAiCommand(body){
   messages:m.map(x=>({role:x.role,content:x.content}))}};
 }
 function answerOf(data){
- const text=data?.choices?.[0]?.message?.content;
- return typeof text==='string'&&text.trim()?text.trim().slice(0,FREE_AI_LIMITS.maxAnswerChars):null;
+ const raw=data?.choices?.[0]?.message?.content;
+ // Some providers return content as an array of parts. Reasoning text is never used as the answer.
+ const text=typeof raw==='string'?raw:Array.isArray(raw)
+  ?raw.map(part=>part&&part.type==='text'&&typeof part.text==='string'?part.text:'').join(''):'';
+ return text.trim()?text.trim().slice(0,FREE_AI_LIMITS.maxAnswerChars):null;
+}
+// Reasoning models (Qwen3, gpt-oss, Nemotron) spend tokens thinking before they answer;
+// a small budget leaves content empty with finish_reason "length".
+export const FREE_AI_MIN_UPSTREAM_TOKENS=1024;
+const upstreamTokens=maxTokens=>Math.min(FREE_AI_LIMITS.maxOutputTokens,Math.max(maxTokens,FREE_AI_MIN_UPSTREAM_TOKENS));
+function emptyReason(data){
+ const choice=data?.choices?.[0];
+ const thought=choice?.message&&['reasoning_content','reasoning'].some(k=>typeof choice.message[k]==='string'&&choice.message[k].trim());
+ return choice?.finish_reason==='length'?(thought?'reasoning-truncated':'answer-truncated'):'empty-answer';
 }
 function reportedCost(data){
  const u=data?.usage;
@@ -194,7 +206,7 @@ export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sle
       {method:'GET',redirect:'manual',credentials:'omit',headers:{Accept:'text/plain'},signal:AbortSignal.timeout(FREE_AI_LIMITS.timeoutMs)})
     :await fetchImpl(spec.url,{method:'POST',redirect:'manual',credentials:'omit',
       headers:{'Content-Type':'application/json',Accept:'application/json'},
-      body:JSON.stringify({model,prompt,stream:false,options:{num_predict:command.maxTokens}}),signal:AbortSignal.timeout(FREE_AI_LIMITS.timeoutMs)});
+      body:JSON.stringify({model,prompt,stream:false,options:{num_predict:upstreamTokens(command.maxTokens)}}),signal:AbortSignal.timeout(FREE_AI_LIMITS.timeoutMs)});
    if(response.status===429||response.status>=500){state[p].coolUntil=clock()+60000;throw Error('upstream-'+response.status);}
    if(response.status===401||response.status===402||response.status===403){state[p].stoppedDay=today();throw Error('upstream-'+response.status);}
    if(response.status!==200)throw Error('upstream-'+response.status);
@@ -207,7 +219,7 @@ export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sle
   // No Authorization header: these endpoints are anonymous. Redirects are refused.
   const response=await fetchImpl(FREE_AI_PROVIDERS[p].url,{method:'POST',redirect:'manual',credentials:'omit',
    headers:{'Content-Type':'application/json',Accept:'application/json'},
-   body:JSON.stringify({model,messages:command.messages,max_tokens:command.maxTokens,temperature:0.2,stream:false}),
+   body:JSON.stringify({model,messages:command.messages,max_tokens:upstreamTokens(command.maxTokens),temperature:0.2,stream:false}),
    signal:AbortSignal.timeout(FREE_AI_LIMITS.timeoutMs)});
   if(response.status===429||response.status>=500){state[p].coolUntil=clock()+60000;throw Error('upstream-'+response.status);}
   if(response.status===401||response.status===402||response.status===403){state[p].stoppedDay=today();throw Error('upstream-'+response.status);}
@@ -215,7 +227,7 @@ export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sle
   const data=await readBoundedJson(response,FREE_AI_LIMITS.maxResponseBytes);
   if(reportedCost(data)){state[p].stoppedDay=today();throw Error('paid-usage-reported');}
   const text=answerOf(data);
-  if(!text)throw Error('empty-answer');
+  if(!text)throw Error(emptyReason(data));
   return {model,text};
  }
  const clientUse=new Map();
