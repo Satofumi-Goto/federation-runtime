@@ -87,7 +87,9 @@ export function clientLimitsFor(providers){
   perDay:Math.max(FREE_AI_CLIENT_LIMITS.perDay,perDay)});
 }
 export const FREE_AI_LIMITS=Object.freeze({maxMessages:16,maxMessageChars:24000,maxTotalChars:48000,
- maxOutputTokens:2048,maxResponseBytes:262144,timeoutMs:60000,maxAnswerChars:32000});
+ maxOutputTokens:2048,maxResponseBytes:262144,timeoutMs:60000,planTimeoutMs:150000,maxAnswerChars:32000});
+// The goal planner writes one long JSON plan; keyless models need more than a minute for it.
+const upstreamTimeout=role=>role==='plan'?FREE_AI_LIMITS.planTimeoutMs:FREE_AI_LIMITS.timeoutMs;
 export const FREE_AI_POLICY=Object.freeze({version:'federation-firewall-free-ai/1',path:FREE_AI_PATH,defaultEnabled:false,
  keyless:true,credentialsStoredOrForwarded:false,signedServerToServerOnly:true,paidCalls:0,
  providers:Object.entries(FREE_AI_PROVIDERS).map(([id,p])=>({id,name:p.name,defaultModel:p.model,
@@ -225,10 +227,10 @@ export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sle
    if(prompt.length>spec.maxPromptChars)throw Error('prompt-too-large');
    const response=spec.kind==='pollinations'
     ?await fetchImpl(spec.url+encodeURIComponent(prompt)+'?model='+encodeURIComponent(model)+'&private=true',
-      {method:'GET',redirect:'manual',credentials:'omit',headers:{Accept:'text/plain'},signal:AbortSignal.timeout(FREE_AI_LIMITS.timeoutMs)})
+      {method:'GET',redirect:'manual',credentials:'omit',headers:{Accept:'text/plain'},signal:AbortSignal.timeout(upstreamTimeout(command.role))})
     :await fetchImpl(spec.url,{method:'POST',redirect:'manual',credentials:'omit',
       headers:{'Content-Type':'application/json',Accept:'application/json'},
-      body:JSON.stringify({model,prompt,stream:false,options:{num_predict:upstreamTokens(command.maxTokens,command.role)}}),signal:AbortSignal.timeout(FREE_AI_LIMITS.timeoutMs)});
+      body:JSON.stringify({model,prompt,stream:false,options:{num_predict:upstreamTokens(command.maxTokens,command.role)}}),signal:AbortSignal.timeout(upstreamTimeout(command.role))});
    if(response.status===429||response.status>=500){state[p].coolUntil=clock()+60000;throw Error('upstream-'+response.status);}
    if(response.status===401||response.status===402||response.status===403){state[p].stoppedDay=today();throw Error('upstream-'+response.status);}
    if(response.status!==200)throw Error('upstream-'+response.status);
@@ -242,7 +244,7 @@ export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sle
   const response=await fetchImpl(FREE_AI_PROVIDERS[p].url,{method:'POST',redirect:'manual',credentials:'omit',
    headers:{'Content-Type':'application/json',Accept:'application/json'},
    body:JSON.stringify({model,messages:command.messages,max_tokens:upstreamTokens(command.maxTokens,command.role),temperature:0.2,stream:false}),
-   signal:AbortSignal.timeout(FREE_AI_LIMITS.timeoutMs)});
+   signal:AbortSignal.timeout(upstreamTimeout(command.role))});
   if(response.status===429||response.status>=500){state[p].coolUntil=clock()+60000;throw Error('upstream-'+response.status);}
   if(response.status===401||response.status===402||response.status===403){state[p].stoppedDay=today();throw Error('upstream-'+response.status);}
   if(response.status!==200)throw Error('upstream-'+response.status);
