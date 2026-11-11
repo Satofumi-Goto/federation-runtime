@@ -1,6 +1,6 @@
 // Prevent accidental changes to the independently deployed public distribution
 // that have not been reviewed and mirrored from the canonical private repository.
-// This checks exactly 46 pinned canonical files; it does NOT fetch private upstream at CI time.
+// This checks exactly 47 pinned canonical files; it does NOT fetch private upstream at CI time.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync,readdirSync,lstatSync} from 'node:fs';
@@ -25,7 +25,7 @@ export function verifyAttestation(manifest,files){
  const expected=manifest.files;
  assert.ok(expected&&typeof expected==='object'&&!Array.isArray(expected));
  const names=Object.keys(expected).sort();
- assert.equal(names.length,46,'unexpected canonical source count');
+ assert.equal(names.length,47,'unexpected canonical source count');
  assert.deepEqual([...files.keys()].sort(),names,'unreviewed additions or deletions');
  for(const name of names){
   assert.ok(name===name.replaceAll('\\','/')&&!name.includes('..')&&!name.startsWith('/'),

@@ -3,7 +3,7 @@ import {randomBytes} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {resolve,dirname,join} from 'node:path';
 import {readFileSync} from 'node:fs';
-import {createAuthenticator} from './auth.mjs';
+import {createAuthenticator,keyringHealth} from './auth.mjs';
 import {createAccessVerifier} from './access.mjs';
 import {createEgress} from './egress.mjs';
 import {createActivityAcquisition,validateEventQuery,NEWS_SOURCE_IDS,TOKYO_EVENT_SOURCE_IDS} from './activitySources.mjs';
@@ -157,6 +157,13 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  const freeAiAuth=createAuthenticator({env:{
    FIREWALL_CLIENT_KEYS_JSON:freeAiKey?JSON.stringify({federation:freeAiKey}):''
  },clock});
+ // Key hygiene across the main ring and every dedicated key (labels only, no key material).
+ const keyHealth=keyringHealth(new Map([
+  ...auth.keyring(),
+  ...[['activity:acquisition',sourceAuth],['activity:news',newsAuth],['activity:event',eventAuth],
+   ['activity:tokyo',tokyoAuth],['federation:free-ai',freeAiAuth]]
+   .flatMap(([label,a])=>[...a.keyring().values()].map(list=>[label,list])),
+ ]));
  const signedClients=new Set();
  const head=gitHead(env);
  const selfOrigin=INDEPENDENT_ORIGINS['firewall-gateway'];
@@ -224,6 +231,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
    if(req.method==='GET'&&path==='/api/status')
     return reply(res,200,{service:'federation-firewall-gateway',stage:'shadow-hold',
       configuredClients:auth.configured,configuredClientIds:[...auth.configuredIds()].sort(),
+      clientKeys:keyHealth,
       registeredApps:publicClients().appCount,canaryEgressEnabled:egress.liveEnabled,
       activityAcquisitionEnabled:activitySourcesEnabled,
       assistantEnabled:assistant.enabled,

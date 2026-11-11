@@ -27,6 +27,8 @@ Node.js 22以上。外部依存パッケージ、AI API、DB、課金設定な�
 
 ### セキュリティの環境変数
 - `FIREWALL_CLIENT_KEYS_JSON`: 例 `{"activity":"<32 bytes base64url>"}`。鍵はGitHub/ブラウザ/チャットには書かず、利用者別に安全なサーバー環境へ設定。文字列43字のbase64urlで32バイト。未設定なら503。
+- 鍵の入れ替え：`{"federation":["<現行>","<次>"]}` のように1依頼元につき最大2本。どちらの鍵の署名も通る。依頼元を次の鍵へ切り替えた後、現行の鍵を外す。
+- 鍵の健全性：`/api/status` の `clientKeys`（`clientKeysDistinct`・`sharedKeyGroups`・`weakKeys`・`rotatingClients`）。専用鍵（活動取得・ニュース・イベント・東京・無料AI）も含めて判定し、鍵の値は出さない。
 - `FIREWALL_CANARY_EGRESS`: 初期値OFF。独立カナリア疎通試験に限定して `true`。商用トラフィックの切替許可ではない。
 - `FIREWALL_ACCESS_TEAM`, `FIREWALL_ACCESS_AUD`, `FIREWALL_OWNER_EMAIL`: Cloudflare Accessの検証パラメーター。未設定時は管理画面を拒否。CF Access JWTの署名・issuer・audience・sub・exp・メールをサーバーで検証する。
 - `PORT`, `HOST`: リッスン設定。
