@@ -356,3 +356,16 @@ test('v1.1: the #1015 shape accepts an optional history (12 turns x 1200 chars, 
  assert.doesNotMatch(logs.join('\n'),/地図はどこ|左のメニュー|その次は|率直/);
  assert.equal(sent.length,2);
 });
+
+test('armed openai: credential-shaped strings in the provider answer are redacted',async()=>{
+ const key=randomBytes(32);
+ const leaked='gh'+'p_'+'z'.repeat(36);
+ const fetchImpl=async()=>openaiAnswer('鍵はこれよ '+leaked+' 分かった？');
+ await withGateway({env:armed({seneschal:key.toString('base64url')}),clock:()=>NOW,fetchImpl},async origin=>{
+  const b=question();
+  const r=await post(origin,b,signFor('seneschal',key,b));
+  assert.equal(r.status,200);
+  assert.equal(r.data.answer,'鍵はこれよ [REDACTED:github-token] 分かった？');
+  assert.doesNotMatch(JSON.stringify(r.data),new RegExp(leaked));
+ });
+});

@@ -1,6 +1,6 @@
 import {readBoundedJson} from './egress.mjs';
 import {CLIENT_IDS} from './policy.mjs';
-import {hasPersonalData} from './hardening.mjs';
+import {hasPersonalData,redactSecrets} from './hardening.mjs';
 // Keyless free AI relay. Every provider here works WITHOUT an account or API key,
 // so no credential is stored, forwarded or logged; nothing here can be billed.
 // Callers are the nine signed family apps (HMAC server-to-server, no browsers).
@@ -84,7 +84,7 @@ export const FREE_AI_POLICY=Object.freeze({version:'federation-firewall-free-ai/
  roles:FREE_AI_ROLES,requestFields:['provider','role','messages','maxTokens','model'],
  responseFields:['ok','provider','model','text','error','retryAfterSeconds'],
  auditFields:['type','at','method','status','client','provider','role','attempts'],promptOrAnswerLogged:false,
- personalDataToPublicPromptProviders:false});
+ personalDataToPublicPromptProviders:false,answerSecretsRedacted:true});
 const CTRL=/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 export function loadFreeAiConfig(env=process.env){
  if(env.FIREWALL_FREE_AI_ENABLED!=='true')return {enabled:false,reason:'flag-off'};
@@ -253,7 +253,9 @@ export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sle
    try{
     const answer=await call(p,command);
     attempts.push({provider:p,ok:true});
-    return {status:200,result:{ok:true,provider:p,model:answer.model,text:answer.text,attempts,paidCalls:0}};
+    const safe=redactSecrets(answer.text);
+    return {status:200,result:{ok:true,provider:p,model:answer.model,text:safe.text,
+     ...(safe.redacted?{redactedSecrets:safe.redacted}:{}),attempts,paidCalls:0}};
    }catch(error){
     attempts.push({provider:p,failed:String(error?.message||'network').slice(0,40).replace(/[^a-z0-9-]/g,'')||'network'});
    }finally{state[p].active--;}

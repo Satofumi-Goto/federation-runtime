@@ -49,3 +49,17 @@ export const PERSONAL_PATTERNS=Object.freeze([
 export function hasPersonalData(texts){
  return texts.some(t=>typeof t==='string'&&PERSONAL_PATTERNS.some(([,re])=>re.test(t)));
 }
+// Answers from external AI (including volunteer-run workers) are untrusted:
+// credential-shaped strings are replaced before they reach any app or
+// implementing AI, so they cannot be committed or reused downstream.
+export function redactSecrets(text){
+ if(typeof text!=='string'||!text)return {text,redacted:0};
+ let out=text,redacted=0;
+ // A private key is removed as a whole block, not only its header line.
+ out=out.replace(/-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----[\s\S]*?(?:-----END (?:[A-Z0-9]+ )*PRIVATE KEY-----|$)/g,
+  ()=>{redacted++;return '[REDACTED:private-key]';});
+ for(const [id,re] of SECRET_PATTERNS){
+  out=out.replace(new RegExp(re.source,re.flags.includes('g')?re.flags:re.flags+'g'),()=>{redacted++;return `[REDACTED:${id}]`;});
+ }
+ return {text:out,redacted};
+}
