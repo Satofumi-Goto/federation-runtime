@@ -54,10 +54,12 @@ test('federation main key exports newest-first audit metadata; the export itself
  });
 });
 
-test('only the federation main key may export; dedicated free-AI key and other clients are refused',async()=>{
+test('federation main key or its dedicated free-AI key may export; other clients are refused',async()=>{
  await withGateway(distributedEnv,async origin=>{
   assert.equal((await exportCall(origin,{client:'seneschal',key:sen})).data.reason,'federation-only');
-  assert.equal((await exportCall(origin,{key:freeOnly})).status,401);
+  const dedicated=await exportCall(origin,{key:freeOnly});
+  assert.equal(dedicated.status,200);assert.equal(dedicated.data.schema,'federation.firewall-audit-export/1');
+  assert.equal((await exportCall(origin,{key:randomBytes(32)})).data.reason,'signature-invalid');
   const r=await fetch(origin+PATH,{method:'POST',body:'{"limit":5}',headers:{'content-type':'application/json'}});
   assert.equal(r.status,401);
   assert.equal((await exportCall(origin,{extra:{origin:'https://evil.example'}})).status,403);

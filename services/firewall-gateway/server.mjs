@@ -156,8 +156,9 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  }
  const assistant=createAssistant({env,fetchImpl,clock});
  const freeAi=createFreeAi({env,fetchImpl,clock});
- // Dedicated free-AI credential for the federation client only. It authorizes
- // nothing else and leaves FIREWALL_CLIENT_KEYS_JSON untouched.
+ // Dedicated free-AI credential for the federation client only. It authorizes the
+ // free-AI relay and the read-only audit export, nothing else, and leaves
+ // FIREWALL_CLIENT_KEYS_JSON untouched.
  const freeAiKey=env.FIREWALL_FREE_AI_FEDERATION_KEY||'';
  const freeAiAuth=createAuthenticator({env:{
    FIREWALL_CLIENT_KEYS_JSON:freeAiKey?JSON.stringify({federation:freeAiKey}):''
@@ -427,7 +428,8 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     }
    }
    // Durable audit: federation-api pulls the newest records (metadata only) and
-   // stores them in an append-only PostgreSQL table. Federation main key only.
+   // stores them in an append-only PostgreSQL table. Federation only: its main key,
+   // or its dedicated free-AI key (the key federation-api holds). Read-only, no egress.
    if(path==='/api/v1/audit/export'){
     if(req.headers.origin||req.headers.cookie||req.headers.authorization)
      return reply(res,403,{ok:false,reason:'server-to-server-only'});
@@ -441,9 +443,11 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     let body;
     try{body=await limitedBody(req,128);}
     catch{return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});}
-    const identity=auth.verify(req,body,path);
+    if(req.headers['x-fw-client']!=='federation')return reply(res,403,{ok:false,reason:'federation-only'});
+    let identity=auth.verify(req,body,path);
+    if(!identity.ok&&identity.reason==='signature-invalid'&&freeAiAuth.configured)
+     identity=freeAiAuth.verify(req,body,path);
     if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
-    if(identity.client!=='federation')return reply(res,403,{ok:false,reason:'federation-only'});
     let command;
     try{command=JSON.parse(body);}catch{return reply(res,400,{ok:false,reason:'invalid-json'});}
     if(!command||typeof command!=='object'||Array.isArray(command)||Object.keys(command).join()!=='limit'

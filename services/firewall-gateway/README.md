@@ -117,13 +117,13 @@ Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更し
 - `FIREWALL_STORE=render-valkey`、`FIREWALL_STORE_INTERNAL_URL=redis://red-<private-render-id>:6379` で同じRender workspace/region の**内部ネットワーク**に直接接続する。外部接続・パス指定・URL認証情報・汎用ホスト・任意ポートは拒否。
 - Node内蔵のRESP2を使い、共有nonceのSET NX PX、INCR/PEXPIRE NXの回数制限、本文を含まない監査メタデータだけをLPUSH/LTRIMで保管する。Redisが未設定/停止/異常応答/タイムアウトなら、署名済みHTTP入口も**403/503側に閉じ、上流へ送らない**。
 - `render-valkey` モードは自動的に分散ストア必須となり、別途 `FIREWALL_REQUIRE_DISTRIBUTED_STORE=true` を忘れても保護を無効化できない。通常のShadowメモリモードは変更しない。
-- 監査ログの永続化：`POST /api/v1/audit/export`（`federation` の主鍵の署名のみ、本文 `{"limit":1〜300}`、新しい順）。共通バックエンドが `FEDERATION_FIREWALL_AUDIT_PULL_ENABLED=true` のとき既存の `FIREWALL_FEDERATION_HMAC_KEY` で5分ごと（`FEDERATION_FIREWALL_AUDIT_PULL_SECONDS`、60〜3600秒）に取り込み、既存PostgreSQLの `federation_firewall_audit.records` へ追記する。表は UPDATE・DELETE・TRUNCATE を拒否し、各行に SHA-256 の連鎖（`chain_sha256`）を持つ。検証は `python3 -m tools.federation_pyworkers.firewall_audit_pull verify`。取り込み状況は `/_status/readiness` の `observed.durableAuditExport`。
+- 監査ログの永続化：`POST /api/v1/audit/export`（`federation` の主鍵、または `FIREWALL_FREE_AI_FEDERATION_KEY` の署名のみ、本文 `{"limit":1〜300}`、新しい順）。共通バックエンドが `FEDERATION_FIREWALL_AUDIT_PULL_ENABLED=true` のとき既存の `FIREWALL_FEDERATION_HMAC_KEY` で5分ごと（`FEDERATION_FIREWALL_AUDIT_PULL_SECONDS`、60〜3600秒）に取り込み、既存PostgreSQLの `federation_firewall_audit.records` へ追記する。表は UPDATE・DELETE・TRUNCATE を拒否し、各行に SHA-256 の連鎖（`chain_sha256`）を持つ。検証は `python3 -m tools.federation_pyworkers.firewall_audit_pull verify`。取り込み状況は `/_status/readiness` の `observed.durableAuditExport`。
 - Render Key Value **Free はメモリのみで、インスタンス再起動でnonce・レートカウント・監査ログが消える。** これは無料の分散検証であって、商用の耐改ざん監査/永続的リプレイ保護ではない。Key Valueを本番の永続ストアへ切り替える際は別PR・予算承認・再検証が必要。
 - Storeの内部URLはサーバー環境変数にだけ設定し、チャット/画面/ブラウザに転送しない。APIルーティングは `gateway=false / legacy=true / HOLD` を保持。
 
 ## Keyless free AI relay (default OFF)
 
 - `POST /api/v1/free-ai/chat` relays OpenAI-style chat to providers that need **no account or API key**: OVHcloud AI Endpoints (anonymous), LLM7.io (anonymous) and Kilo AI Gateway (`:free` models only). No credential is stored or forwarded.
-- HMAC server-to-server only (`federation` client by default, `FIREWALL_FREE_AI_CLIENT_IDS`), Origin/Cookie/Authorization rejected. `FIREWALL_FREE_AI_FEDERATION_KEY` is a dedicated federation key valid for this route only (no change to `FIREWALL_CLIENT_KEYS_JSON`). OFF unless `FIREWALL_FREE_AI_ENABLED=true`.
+- HMAC server-to-server only (`federation` client by default, `FIREWALL_FREE_AI_CLIENT_IDS`), Origin/Cookie/Authorization rejected. `FIREWALL_FREE_AI_FEDERATION_KEY` is a dedicated federation key valid for this route and the read-only `/api/v1/audit/export` only (no change to `FIREWALL_CLIENT_KEYS_JSON`). OFF unless `FIREWALL_FREE_AI_ENABLED=true`.
 - Per-provider ceilings at or below the anonymous limits; 429/5xx cool down 60 s, 401/402/403 or any reported cost stop that provider for the day. LLM7 and Kilo may log prompts, so `plan`/`implement`/`review`/`test` roles are refused for them.
 - `GET /api/free-ai` and `/api/clients` (`freeAi`) publish the provider list, limits and today's counts. Prompts and answers are never logged.
