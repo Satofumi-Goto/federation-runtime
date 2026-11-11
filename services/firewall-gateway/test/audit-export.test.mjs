@@ -83,3 +83,16 @@ test('readiness observed evidence is additive and empty by default',()=>{
  assert.equal(r.observed.durableAuditExport.lastExportAt,null);
  assert.equal(r.storageIndependent,false);
 });
+
+test('identical events stay distinct: every exported line carries a unique id',async()=>{
+ await withGateway(distributedEnv,async origin=>{
+  await exportCall(origin);await exportCall(origin);
+  const r=await exportCall(origin);
+  const records=r.data.records.map(l=>JSON.parse(l));
+  assert.equal(records.length,3);
+  assert.equal(new Set(r.data.records).size,3);
+  assert.equal(new Set(records.map(x=>x.id)).size,3);
+  const {id,...rest}=records[0],{id:id2,...rest2}=records[1];
+  assert.deepEqual(rest,rest2);
+ });
+});
