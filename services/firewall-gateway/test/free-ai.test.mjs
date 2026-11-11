@@ -286,3 +286,21 @@ test('code roles send the full 2048-token budget upstream; other roles at least 
  assert.equal(tokens[0],2048);
  assert.equal(tokens[tokens.length-1],1024);
 });
+
+test('plan role gets a 150 s upstream timeout; other roles keep 60 s',async()=>{
+ const {FREE_AI_LIMITS}=await import('../freeAi.mjs');
+ assert.equal(FREE_AI_LIMITS.planTimeoutMs,150000);
+ assert.equal(FREE_AI_LIMITS.timeoutMs,60000);
+ const seen=[];
+ const real=AbortSignal.timeout;
+ AbortSignal.timeout=ms=>{seen.push(ms);return real.call(AbortSignal,ms);};
+ try{
+  const {fetchImpl}=recorder(()=>ok('[]'));
+  await withGateway({env:env(),fetchImpl},async origin=>{
+   assert.equal((await post(origin,ask('plan'))).status,200);
+   assert.equal((await post(origin,ask('summarize',{provider:'llm7'}))).status,200);
+  });
+ }finally{AbortSignal.timeout=real;}
+ assert.ok(seen.includes(150000));
+ assert.ok(seen.includes(60000));
+});
