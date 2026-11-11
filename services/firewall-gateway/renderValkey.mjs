@@ -17,6 +17,7 @@ function command(args){
  }
  return Buffer.concat(chunks);
 }
+const MAX_ARRAY=1000;
 function parse(buf,from=0){
  if(buf.length<=from)return null;
  const type=String.fromCharCode(buf[from]);
@@ -40,6 +41,21 @@ function parse(buf,from=0){
   if(buf[next+len]!==13||buf[next+len+1]!==10)throw Error('redis-bulk-invalid');
   return {value:buf.subarray(next,next+len).toString('utf8'),next:next+len+2};
  }
+ // Arrays are accepted only for LRANGE of the audit list: bounded, bulk strings only.
+ if(type==='*'){
+  if(!/^-?\d{1,4}$/.test(head))throw Error('redis-array-invalid');
+  const count=Number(head);
+  if(count===-1)return {value:null,next};
+  if(count<0||count>MAX_ARRAY)throw Error('redis-array-invalid');
+  const items=[];let at=next;
+  for(let i=0;i<count;i++){
+   if(buf.length>at&&buf[at]!==36)throw Error('redis-array-invalid');
+   const item=parse(buf,at);
+   if(!item)return null;
+   items.push(item.value);at=item.next;
+  }
+  return {value:items,next:at};
+ }
  throw Error('redis-response-type-not-allowed');
 }
 export function createRenderValkeyStore({url,timeoutMs=1600,transport=net.createConnection,prefix='fw:',maxAudit=1000}={}){
@@ -51,7 +67,7 @@ export function createRenderValkeyStore({url,timeoutMs=1600,transport=net.create
   throw Error('invalid-private-valkey-url');
  if(!Number.isInteger(timeoutMs)||timeoutMs<250||timeoutMs>5000)throw Error('invalid-store-timeout');
  if(!/^[a-z0-9:_-]{1,32}$/.test(prefix))throw Error('invalid-store-prefix');
- async function run(commands){
+ async function run(commands,{maxReply=MAX_REPLY}={}){
   let frames;try{frames=Buffer.concat(commands.map(command));}catch{return null;}
   return new Promise(resolve=>{
    let socket,settled=false,data=Buffer.alloc(0),offset=0;
@@ -71,7 +87,7 @@ export function createRenderValkeyStore({url,timeoutMs=1600,transport=net.create
      if(settled)return;
      try{
       data=Buffer.concat([data,chunk]);
-      if(data.length>MAX_REPLY)return finish(null);
+      if(data.length>maxReply)return finish(null);
       while(values.length<commands.length){
        const reply=parse(data,offset);
        if(!reply)break;
@@ -107,6 +123,12 @@ export function createRenderValkeyStore({url,timeoutMs=1600,transport=net.create
    if(!replies||!Number.isSafeInteger(replies[0])||replies[0]<1||replies[1]!=='OK')
     return {ok:false,reason:'store-unavailable'};
    return {ok:true};
+  },
+  async readAudit(limit){
+   // Each record is at most 2048 bytes; the reply bound follows the requested count.
+   const replies=await run([['LRANGE',prefix+'audit','0',String(limit-1)]],{maxReply:limit*2100+64});
+   if(!replies||!Array.isArray(replies[0]))return {ok:false,reason:'store-unavailable'};
+   return {ok:true,lines:replies[0].filter(l=>typeof l==='string')};
   }
  };
 }
