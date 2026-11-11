@@ -98,7 +98,8 @@ test('healthy shared Redis claims nonce, enforces budgets and writes a metadata-
  assert.equal(m.requests(),4,'one replay, two budget commands, one audit pipeline');
  assert.equal(m.audits.length,1);
  const record=JSON.parse(m.audits[0]);
- assert.deepEqual(Object.keys(record).sort(),['at','client','kind','type']);
+ assert.deepEqual(Object.keys(record).sort(),['at','client','id','kind','type']);
+ assert.match(record.id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
  assert.equal(record.kind,'shadow-probe');
  assert.equal(record.client,'activity');
  assert.doesNotMatch(m.audits[0],/key|signature|holiday|question|bearer/i);

@@ -1,4 +1,8 @@
+import {randomUUID} from 'node:crypto';
 import {createRenderValkeyStore} from './renderValkey.mjs';
+// Every audit line gets a unique id so identical events (same type, time and
+// client) stay distinct when the durable sink deduplicates by line hash.
+export const auditLine=record=>JSON.stringify({...record,id:randomUUID()});
 // Shared state for replay protection, request budgets and audit records.
 // The memory store is per-process only and reports distributed:false.
 // The Redis REST store (Upstash-compatible) is shared across instances and
@@ -32,7 +36,7 @@ export function createMemoryStore({clock=Date.now,maxKeys=5000,maxAudit=500}={})
    return {ok:true,count:1};
   },
   async appendAudit(record){
-   audit.push(JSON.stringify(record));
+   audit.push(auditLine(record));
    if(audit.length>maxAudit)audit.shift();
    return {ok:true};
   },
@@ -86,7 +90,7 @@ export function createRedisRestStore({url,token,fetchImpl=fetch,timeoutMs=1500,p
    return {ok:true,count:out[0]};
   },
   async appendAudit(record){
-   const line=JSON.stringify(record);
+   const line=auditLine(record);
    if(line.length>2048)return {ok:false,reason:'audit-record-too-large'};
    const out=await pipeline([['LPUSH',prefix+auditKey,line],['LTRIM',prefix+auditKey,'0',String(maxAudit-1)]]);
    return out?{ok:true}:{ok:false,reason:'store-unavailable'};

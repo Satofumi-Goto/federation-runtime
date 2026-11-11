@@ -2,6 +2,7 @@
 // Node built-in socket client, private in-region endpoint, no dependencies.
 // Free Render KV is NON-DURABLE and may restart; never call it immutable audit.
 import net from 'node:net';
+import {randomUUID} from 'node:crypto';
 const KEY=/^[A-Za-z0-9:_.-]{1,200}$/;
 const RENDER_HOST=/^red-[a-z0-9]{12,48}$/;
 const MAX_REPLY=65536;
@@ -117,7 +118,8 @@ export function createRenderValkeyStore({url,timeoutMs=1600,transport=net.create
    return {ok:true,count:replies[0]};
   },
   async appendAudit(record){
-   const line=JSON.stringify(record);
+   // Unique id: identical events stay distinct in the durable sink.
+   const line=JSON.stringify({...record,id:randomUUID()});
    if(line.length>2048)return {ok:false,reason:'audit-record-too-large'};
    const replies=await run([['LPUSH',prefix+'audit',line],['LTRIM',prefix+'audit','0',String(maxAudit-1)]]);
    if(!replies||!Number.isSafeInteger(replies[0])||replies[0]<1||replies[1]!=='OK')
