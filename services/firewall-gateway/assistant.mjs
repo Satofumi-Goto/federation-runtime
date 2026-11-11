@@ -1,5 +1,6 @@
 import {readBoundedJson} from './egress.mjs';
 import {CLIENT_IDS} from './policy.mjs';
+import {redactSecrets} from './hardening.mjs';
 // Shared avatar-question intake for the nine Federation family apps.
 // Request/response fields follow the assistant answer contract
 // (Satofumi-Goto/seneschal docs/qa/assistant-answer-contract.md):
@@ -227,8 +228,9 @@ export function createAssistant({env=process.env,fetchImpl=fetch,clock=Date.now}
     body:JSON.stringify(request.body),signal:AbortSignal.timeout(ASSISTANT_LIMITS.timeoutMs)});
    const data=await readBoundedJson(response,ASSISTANT_LIMITS.maxResponseBytes);
    if(!live())return unavailable(requestId);
-   const answer=answerText(cfg.provider,data);
-   if(!answer)throw Error('empty-answer');
+   const raw=answerText(cfg.provider,data);
+   if(!raw)throw Error('empty-answer');
+   const answer=redactSecrets(raw).text;
    return {status:200,result:{ok:true,status:'answered',answer,provider:cfg.provider,requestId,
     ...(q.legacyShape?{characterId:q.character.id}:{})}};
   }catch{

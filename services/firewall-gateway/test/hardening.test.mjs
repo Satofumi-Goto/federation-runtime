@@ -6,7 +6,7 @@ import {createGatewayServer} from '../server.mjs';
 import {signHeaders} from '../auth.mjs';
 import {FREE_AI_PATH} from '../freeAi.mjs';
 import {ASSISTANT_PATH} from '../assistant.mjs';
-import {findSecret,precheckSignedHeaders,SECRET_PATTERNS,hasPersonalData} from '../hardening.mjs';
+import {findSecret,precheckSignedHeaders,SECRET_PATTERNS,hasPersonalData,redactSecrets} from '../hardening.mjs';
 
 const NOW=Date.parse('2026-11-10T09:00:00.000Z');
 const key=randomBytes(32).toString('base64url');
@@ -154,4 +154,37 @@ test('JSON responses carry a deny-all Content-Security-Policy',async()=>{
    assert.match(r.headers.get('content-security-policy')||'',/^default-src 'none'; frame-ancestors 'none'/,path);
   }
  });
+});
+
+test('redactSecrets replaces every credential category and leaves prose intact',()=>{
+ for(const [id,sample] of Object.entries(SAMPLES)){
+  const r=redactSecrets('前 '+sample+' 後 '+sample);
+  assert.equal(findSecret([r.text]),null,id);
+  assert.ok(r.redacted>=1,id);assert.match(r.text,new RegExp('\\[REDACTED:'+id+'\\]'),id);
+ }
+ assert.deepEqual(redactSecrets('普通の文章です。IRR -12.13%'),{text:'普通の文章です。IRR -12.13%',redacted:0});
+});
+
+test('free AI answers from providers are redacted before reaching the caller',async()=>{
+ const leaked=SAMPLES['openai-or-anthropic-key'];
+ const fetchImpl=async()=>new Response(JSON.stringify({choices:[{message:{content:'使って: '+leaked}}]}),
+  {status:200,headers:{'content-type':'application/json'}});
+ await withGateway({env:env({FIREWALL_FREE_AI_PROVIDERS:'ovh'}),fetchImpl},async origin=>{
+  const body=JSON.stringify({role:'implement',messages:[{role:'user',content:'関数を書いて'}]});
+  const r=await signedPost(origin,FREE_AI_PATH,body);
+  assert.equal(r.status,200);
+  assert.equal(r.data.text,'使って: [REDACTED:openai-or-anthropic-key]');
+  assert.equal(r.data.redactedSecrets,1);
+  assert.ok(!JSON.stringify(r.data).includes(leaked));
+  const policy=await (await fetch(origin+'/api/free-ai')).json();
+  assert.equal(JSON.stringify(policy).includes('"answerSecretsRedacted":true'),true);
+ });
+});
+
+test('a private key block is redacted entirely, body included',()=>{
+ const block='-----BEGIN '+'EC PRIVATE KEY-----\nMHcCAQEEIBody0123456789abcdef\nmoreLine==\n-----END '+'EC PRIVATE KEY-----';
+ const r=redactSecrets('前\n'+block+'\n後');
+ assert.equal(r.text,'前\n[REDACTED:private-key]\n後');
+ const cut=redactSecrets('前 -----BEGIN '+'PRIVATE KEY-----\nMIIEvQIBADAN');
+ assert.equal(cut.text,'前 [REDACTED:private-key]');
 });
