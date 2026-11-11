@@ -36,7 +36,7 @@ const recorder=handler=>{
 };
 
 test('only keyless providers are listed and none of them takes a key',()=>{
- assert.deepEqual(Object.keys(FREE_AI_PROVIDERS).sort(),['blockrun','horde','kilo','llm7','mlvoca','ovh','ovhgpt','ovhllama','pollinations']);
+ assert.deepEqual(Object.keys(FREE_AI_PROVIDERS).sort(),['blockrun','horde','kilo','llm7','mlvoca','ovh','ovhgpt','ovhgptmini','ovhllama','ovhmistral','ovhqwen','ovhqwen27','pollinations']);
  assert.equal(FREE_AI_POLICY.keyless,true);
  assert.equal(FREE_AI_POLICY.credentialsStoredOrForwarded,false);
  assert.equal(FREE_AI_POLICY.defaultEnabled,false);
@@ -86,9 +86,9 @@ test('anonymous call: no Authorization header, first answer wins, fallback on 42
   assert.equal(res.status,200);
   assert.equal(res.data.provider,'llm7');
   assert.equal(res.data.paidCalls,0);
-  assert.deepEqual(res.data.attempts.map(a=>a.provider),['ovh','ovhgpt','ovhllama','llm7']);
+  assert.deepEqual(res.data.attempts.map(a=>a.provider),['ovh','ovhgpt','ovhllama','ovhqwen','ovhqwen27','ovhmistral','ovhgptmini','llm7']);
  });
- assert.equal(calls.length,4);
+ assert.equal(calls.length,8);
  for(const c of calls){
   assert.equal(Object.keys(c.headers).some(h=>/authorization|api-?key/i.test(h)),false);
   assert.equal(c.body.stream,false);
@@ -110,10 +110,11 @@ test('per-minute ceiling, paid-usage signal and status endpoint',async()=>{
   ?new Response(JSON.stringify({choices:[{message:{content:'x'}}],usage:{cost:0.01}}),{status:200,headers:{'content-type':'application/json'}})
   :ok('OK'));
  await withGateway({env:env(),fetchImpl},async origin=>{
-  // Each OVH model is its own 2/min lane: ovh, ovhgpt, ovhllama answer two each.
+  // Each OVH model is its own 2/min lane: 7 OVH models answer two each.
+  const ovhLanes=['ovh','ovhgpt','ovhllama','ovhqwen','ovhqwen27','ovhmistral','ovhgptmini'];
   const lanes=[];
-  for(let i=0;i<6;i++){const r=await post(origin,ask('implement'));assert.equal(r.status,200);lanes.push(r.data.provider);}
-  assert.deepEqual(lanes,['ovh','ovh','ovhgpt','ovhgpt','ovhllama','ovhllama']);
+  for(let i=0;i<ovhLanes.length*2;i++){const r=await post(origin,ask('implement'));assert.equal(r.status,200);lanes.push(r.data.provider);}
+  assert.deepEqual(lanes,ovhLanes.flatMap(p=>[p,p]));
   const third=await post(origin,ask('implement'));
   assert.equal(third.status,429);
   assert.equal(third.data.error,'rate-limited');
@@ -127,9 +128,10 @@ test('per-minute ceiling, paid-usage signal and status endpoint',async()=>{
   assert.equal(status.usageToday.ovh,2);
   assert.equal(JSON.stringify(status).includes(key),false);
  });
- assert.equal(calls.filter(c=>c.url.includes('ovh')).length,6);
+ assert.equal(calls.filter(c=>c.url.includes('ovh')).length,14);
  assert.deepEqual([...new Set(calls.filter(c=>c.url.includes('ovh')).map(c=>c.body.model))],
-  ['Qwen3.8-27B','gpt-oss-120b','Meta-Llama-3_3-70B-Instruct']);
+  ['Qwen3.8-27B','gpt-oss-120b','Meta-Llama-3_3-70B-Instruct','Qwen3.5-397B-A17B','Qwen3.6-27B',
+   'Mistral-Small-3.2-24B-Instruct-2506','gpt-oss-20b']);
 });
 
 test('dedicated FIREWALL_FREE_AI_FEDERATION_KEY works without FIREWALL_CLIENT_KEYS_JSON and only for free AI',async()=>{
