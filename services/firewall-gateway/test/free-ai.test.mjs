@@ -262,3 +262,14 @@ test('reasoning models get at least 1024 upstream tokens; truncated thinking is 
  });
  assert.ok(calls.every(c=>(c.body.max_tokens??c.body.options?.num_predict??1024)>=1024));
 });
+
+test('failure codes are short fixed codes (timeout, aborted, own codes, network)',async()=>{
+ const {failureCode}=await import('../freeAi.mjs');
+ const t=new Error('The operation was aborted due to timeout');t.name='TimeoutError';
+ assert.equal(failureCode(t),'timeout');
+ const a=new Error('This operation was aborted');a.name='AbortError';
+ assert.equal(failureCode(a),'aborted');
+ assert.equal(failureCode(new Error('upstream-429')),'upstream-429');
+ assert.equal(failureCode(new Error('fetch failed: ECONNRESET at 1.2.3.4')),'network');
+ assert.equal(failureCode(null),'network');
+});

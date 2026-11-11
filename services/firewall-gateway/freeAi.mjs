@@ -144,6 +144,14 @@ function reportedCost(data){
  return u&&typeof u==='object'?[u.cost,u.total_cost].some(v=>typeof v==='number'&&v>0):false;
 }
 const HORDE_WAIT_MS=50000,HORDE_POLL_MS=3000;
+// Fixed reason codes only: own codes pass through, platform errors map to a short code.
+export function failureCode(error){
+ const name=String(error?.name||''),message=String(error?.message||'');
+ if(/^[a-z0-9][a-z0-9-]{0,39}$/.test(message))return message;
+ if(name==='TimeoutError'||/timeout/i.test(message))return 'timeout';
+ if(name==='AbortError')return 'aborted';
+ return 'network';
+}
 export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms))}={}){
  const cfg=loadFreeAiConfig(env);
  const state=Object.fromEntries(Object.keys(FREE_AI_PROVIDERS).map(p=>[p,{minute:[],hour:[],day:'',dayCount:0,active:0,coolUntil:0,stoppedDay:''}]));
@@ -257,7 +265,7 @@ export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sle
     return {status:200,result:{ok:true,provider:p,model:answer.model,text:safe.text,
      ...(safe.redacted?{redactedSecrets:safe.redacted}:{}),attempts,paidCalls:0}};
    }catch(error){
-    attempts.push({provider:p,failed:String(error?.message||'network').slice(0,40).replace(/[^a-z0-9-]/g,'')||'network'});
+    attempts.push({provider:p,failed:failureCode(error)});
    }finally{state[p].active--;}
   }
   const limited=attempts.every(a=>a.skipped&&a.skipped!=='stopped-today');
