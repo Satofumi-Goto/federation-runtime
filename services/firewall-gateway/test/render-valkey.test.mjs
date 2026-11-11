@@ -58,6 +58,9 @@ async function fakeValkey(callback){
      list.unshift(command[2]);replies.push(':'+list.length+'\r\n');
     }else if(op==='LTRIM'){
      list.splice(Number(command[3])+1);replies.push('+OK\r\n');
+    }else if(op==='LRANGE'){
+     const items=list.slice(Number(command[2]),Number(command[3])+1);
+     replies.push('*'+items.length+'\r\n'+items.map(i=>'$'+Buffer.byteLength(i)+'\r\n'+i+'\r\n').join(''));
     }else{socket.write('-ERR invalid request\r\n');return;}
    }
    socket.write(replies.join(''));
@@ -143,4 +146,16 @@ test('render-valkey mode automatically forces fail-closed shared guards at HTTP 
   assert.equal(response.status,503);
   assert.equal((await response.json()).reason,'security-store-unavailable');
  }finally{await new Promise(resolve=>app.server.close(resolve));}
+});
+
+test('audit list can be read back newest-first through LRANGE, bounded and bulk-only',async()=>{
+ await fakeValkey(async({transport})=>{
+  const s=createRenderValkeyStore({url:valid,transport});
+  for(let i=0;i<3;i++)assert.deepEqual(await s.appendAudit({type:'firewall.test',i}),{ok:true});
+  const r=await s.readAudit(2);
+  assert.equal(r.ok,true);
+  assert.deepEqual(r.lines.map(l=>JSON.parse(l).i),[2,1]);
+  const all=await s.readAudit(300);
+  assert.equal(all.lines.length,3);
+ });
 });

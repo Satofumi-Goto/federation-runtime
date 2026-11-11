@@ -78,7 +78,8 @@ export function parentStatus(origin){
 // Only facts with evidence are true. Zero-dependency Node service with no
 // Base44 SDK/backend: backendIndependent. No durable store, no app-UI signed
 // E2E, no custom DNS: all false. productionReady stays false (shadow-hold).
-export function readinessStatus({env=process.env,distributed=false}={}){
+export const AUDIT_EXPORT_MAX=300;
+export function readinessStatus({env=process.env,distributed=false,observed={}}={}){
  const sharedLive=distributed&&['render-valkey','redis-rest'].includes(env.FIREWALL_STORE);
  const storageReason=sharedLive
   ?'shared replay and rate budgets are configured, but durability and immutable audit retention remain unverified; free Render Valkey loses state on restart'
@@ -90,6 +91,10 @@ export function readinessStatus({env=process.env,distributed=false}={}){
   authenticatedE2E:false,dnsVerified:false,cutoverEnabled:false,verifiedCutovers:0,
   evidence:{frontendHostIndependent:'operations console and status pages are served by this Node process, not Base44',
    backendIndependent:'node-only server, no Base44 SDK or backend; served from its own Render origin'},
+  // Measured in this process (additive; never promotes the boolean flags above).
+  observed:{signedServerToServerClients:[...(observed.signedClients||[])].sort(),
+   durableAuditExport:{lastExportAt:observed.lastAuditExportAt||null,exportsThisProcess:observed.auditExports||0,
+    sink:'federation-api PostgreSQL append-only table (pulled with the federation HMAC key)'}},
   pending:{storageIndependent:storageReason,
    authenticatedE2E:'no user-facing signed app-to-gateway E2E; GitHub OIDC and Activity HMAC canaries are diagnostic only',
    dnsVerified:'onrender.com subdomain only; no custom domain or DNS verification',
@@ -165,6 +170,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
    .flatMap(([label,a])=>[...a.keyring().values()].map(list=>[label,list])),
  ]));
  const signedClients=new Set();
+ const auditExport={lastAt:null,count:0};
  const head=gitHead(env);
  const selfOrigin=INDEPENDENT_ORIGINS['firewall-gateway'];
  const apps=()=>independentApps(auth.configuredIds(),signedClients);
@@ -227,7 +233,8 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
    if(req.method==='GET'&&path==='/_status/parent')
     return reply(res,200,parentStatus(selfOrigin));
    if(req.method==='GET'&&path==='/_status/readiness')
-    return reply(res,200,readinessStatus({env,distributed:!!sharedStore}));
+    return reply(res,200,readinessStatus({env,distributed:!!sharedStore,
+      observed:{signedClients,lastAuditExportAt:auditExport.lastAt,auditExports:auditExport.count}}));
    if(req.method==='GET'&&path==='/api/status')
     return reply(res,200,{service:'federation-firewall-gateway',stage:'shadow-hold',
       configuredClients:auth.configured,configuredClientIds:[...auth.configuredIds()].sort(),
@@ -418,6 +425,41 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
         :'activity-upstream-unavailable';
       return reply(res,503,{ok:false,reason});
     }
+   }
+   // Durable audit: federation-api pulls the newest records (metadata only) and
+   // stores them in an append-only PostgreSQL table. Federation main key only.
+   if(path==='/api/v1/audit/export'){
+    if(req.headers.origin||req.headers.cookie||req.headers.authorization)
+     return reply(res,403,{ok:false,reason:'server-to-server-only'});
+    if(req.method!=='POST')return reply(res,405,{ok:false,reason:'method-not-allowed'});
+    if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
+     return reply(res,415,{ok:false,reason:'json-required'});
+    if(declaredTooLarge(req,128))
+     return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});
+    const pre=precheckSignedHeaders(req,clock);
+    if(!pre.ok)return reply(res,pre.status,{ok:false,reason:pre.reason},{Connection:'close'});
+    let body;
+    try{body=await limitedBody(req,128);}
+    catch{return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});}
+    const identity=auth.verify(req,body,path);
+    if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
+    if(identity.client!=='federation')return reply(res,403,{ok:false,reason:'federation-only'});
+    let command;
+    try{command=JSON.parse(body);}catch{return reply(res,400,{ok:false,reason:'invalid-json'});}
+    if(!command||typeof command!=='object'||Array.isArray(command)||Object.keys(command).join()!=='limit'
+      ||!Number.isInteger(command.limit)||command.limit<1||command.limit>AUDIT_EXPORT_MAX)
+     return reply(res,400,{ok:false,reason:'unsupported-command'});
+    if(!sharedStore||typeof sharedStore.readAudit!=='function')
+     return reply(res,503,{ok:false,reason:'security-store-unavailable'});
+    const shared=await enforceShared(identity.client,req.headers['x-fw-nonce'],'audit-export');
+    if(!shared.ok)return reply(res,shared.status,{ok:false,reason:shared.reason},
+      shared.retryAfterSeconds?{'Retry-After':String(shared.retryAfterSeconds)}:{});
+    signedClients.add(identity.client);
+    const read=await sharedStore.readAudit(command.limit);
+    if(!read.ok)return reply(res,503,{ok:false,reason:'security-store-unavailable'});
+    auditExport.lastAt=new Date(clock()).toISOString();auditExport.count++;
+    return reply(res,200,{ok:true,schema:'federation.firewall-audit-export/1',order:'newest-first',
+      count:read.lines.length,records:read.lines});
    }
    if(path==='/api/v1/shadow/probe'){
     // A server-to-server signature must never be accepted from a browser

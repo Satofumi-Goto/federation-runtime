@@ -37,6 +37,8 @@ export function createMemoryStore({clock=Date.now,maxKeys=5000,maxAudit=500}={})
    return {ok:true};
   },
   auditSnapshot:()=>audit.slice(),
+  // Newest first, same order as the distributed list.
+  async readAudit(limit){return {ok:true,lines:audit.slice(-limit).reverse()};},
  };
 }
 
@@ -49,7 +51,7 @@ export function createRedisRestStore({url,token,fetchImpl=fetch,timeoutMs=1500,p
  if(typeof token!=='string'||!/^[A-Za-z0-9_=-]{20,512}$/.test(token))throw Error('invalid-store-token');
  if(!/^[a-z0-9:_-]{1,32}$/.test(prefix))throw Error('invalid-store-prefix');
  const endpoint=parsed.origin+'/pipeline';
- async function pipeline(commands){
+ async function pipeline(commands,{maxBytes=16384}={}){
   let response;
   try{
    response=await fetchImpl(endpoint,{method:'POST',redirect:'manual',credentials:'omit',
@@ -59,9 +61,9 @@ export function createRedisRestStore({url,token,fetchImpl=fetch,timeoutMs=1500,p
   if(!response||response.status!==200)return null;
   if(!/^application\/json\b/i.test(response.headers.get('content-type')||''))return null;
   const declared=Number(response.headers.get('content-length'));
-  if(Number.isFinite(declared)&&declared>16384)return null;
+  if(Number.isFinite(declared)&&declared>maxBytes)return null;
   let data;
-  try{data=JSON.parse(await response.text());}catch{return null;}
+  try{const text=await response.text();if(text.length>maxBytes)return null;data=JSON.parse(text);}catch{return null;}
   if(!Array.isArray(data)||data.length!==commands.length||data.some(x=>!x||typeof x!=='object'||'error' in x))
    return null;
   return data.map(x=>x.result);
@@ -88,6 +90,10 @@ export function createRedisRestStore({url,token,fetchImpl=fetch,timeoutMs=1500,p
    if(line.length>2048)return {ok:false,reason:'audit-record-too-large'};
    const out=await pipeline([['LPUSH',prefix+auditKey,line],['LTRIM',prefix+auditKey,'0',String(maxAudit-1)]]);
    return out?{ok:true}:{ok:false,reason:'store-unavailable'};
+  },
+  async readAudit(limit){
+   const out=await pipeline([['LRANGE',prefix+auditKey,'0',String(limit-1)]],{maxBytes:limit*2400+64});
+   return Array.isArray(out?.[0])?{ok:true,lines:out[0].filter(l=>typeof l==='string')}:{ok:false,reason:'store-unavailable'};
   },
  };
 }
