@@ -232,3 +232,19 @@ test('one calling app is capped per minute across all providers',async()=>{
  for(let i=0;i<31;i++)last=await ai.chat('federation',cmd());
  assert.equal(last.status,429);assert.equal(last.result.error,'client-rate-limited');
 });
+
+test('audit records per-provider reason codes but never prompt or answer text',async()=>{
+ const lines=[];
+ const {fetchImpl}=recorder(url=>url.includes('oai.endpoints')?new Response('{}',{status:404}):ok('ANSWER-TEXT'));
+ await withGateway({env:env(),fetchImpl,auditSink:line=>lines.push(line)},async origin=>{
+  assert.equal((await post(origin,JSON.stringify({role:'summarize',messages:[{role:'user',content:'PROMPT-TEXT'}]}))).status,200);
+  await new Promise(r=>setTimeout(r,20));
+ });
+ const audit=lines.map(l=>JSON.parse(l)).filter(e=>e.type==='firewall.free-ai.request');
+ assert.equal(audit.length,1);
+ assert.ok(Array.isArray(audit[0].attempts)&&audit[0].attempts.length>=1);
+ assert.ok(audit[0].attempts.some(a=>a.failed==='upstream-404'||a.ok));
+ const raw=lines.join('\n');
+ assert.equal(raw.includes('PROMPT-TEXT'),false);
+ assert.equal(raw.includes('ANSWER-TEXT'),false);
+});

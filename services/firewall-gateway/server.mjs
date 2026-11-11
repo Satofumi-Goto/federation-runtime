@@ -182,11 +182,12 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     }));}catch{/* Observability must not interrupt responses. */}
   });
   // Free AI audit: never record messages, answers, signature or IP.
-  let freeClient=null,freeProvider=null,freeRole=null;
+  let freeClient=null,freeProvider=null,freeRole=null,freeAttempts=null;
   if(path===FREE_AI_PATH)res.once('finish',()=>{
     try{auditSink(JSON.stringify({
       type:'firewall.free-ai.request',at:new Date(clock()).toISOString(),
       method:req.method,status:res.statusCode,client:freeClient,provider:freeProvider,role:freeRole,
+      attempts:freeAttempts,
     }));}catch{/* Observability must not interrupt responses. */}
   });
   // Activity acquisition / admin audit: fixed metadata only, never body or IP.
@@ -346,6 +347,13 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
      return reply(res,422,{ok:false,error:'secret-detected'});
     const result=await freeAi.chat(identity.client,parsed.command);
     freeProvider=result.result.provider||null;
+    // Provider id + fixed reason codes only (no prompt, answer, model text or key).
+    freeAttempts=Array.isArray(result.result.attempts)?result.result.attempts.slice(0,20).map(a=>({
+      provider:String(a.provider||'').slice(0,24),
+      ...(a.ok?{ok:true}:{}),
+      ...(a.skipped?{skipped:String(a.skipped).slice(0,40)}:{}),
+      ...(a.failed?{failed:String(a.failed).slice(0,40)}:{}),
+    })):null;
     return reply(res,result.status,result.result,
       result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});
    }

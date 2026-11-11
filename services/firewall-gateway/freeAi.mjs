@@ -83,7 +83,7 @@ export const FREE_AI_POLICY=Object.freeze({version:'federation-firewall-free-ai/
   codeRolesAllowed:!p.publicPrompts})),
  roles:FREE_AI_ROLES,requestFields:['provider','role','messages','maxTokens','model'],
  responseFields:['ok','provider','model','text','error','retryAfterSeconds'],
- auditFields:['type','at','method','status','client','provider','role'],promptOrAnswerLogged:false,
+ auditFields:['type','at','method','status','client','provider','role','attempts'],promptOrAnswerLogged:false,
  personalDataToPublicPromptProviders:false});
 const CTRL=/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 export function loadFreeAiConfig(env=process.env){
