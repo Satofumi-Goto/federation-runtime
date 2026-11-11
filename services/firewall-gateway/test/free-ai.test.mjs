@@ -273,3 +273,14 @@ test('failure codes are short fixed codes (timeout, aborted, own codes, network)
  assert.equal(failureCode(new Error('fetch failed: ECONNRESET at 1.2.3.4')),'network');
  assert.equal(failureCode(null),'network');
 });
+
+test('code roles send the full 2048-token budget upstream; other roles at least 1024',async()=>{
+ const {calls,fetchImpl}=recorder(()=>ok('OK'));
+ await withGateway({env:env(),fetchImpl},async origin=>{
+  assert.equal((await post(origin,ask('implement',{maxTokens:256}))).status,200);
+  assert.equal((await post(origin,ask('summarize',{maxTokens:256,provider:'llm7'}))).status,200);
+ });
+ const tokens=calls.map(c=>c.body.max_tokens??c.body.options?.num_predict);
+ assert.equal(tokens[0],2048);
+ assert.equal(tokens[tokens.length-1],1024);
+});
