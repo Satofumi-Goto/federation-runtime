@@ -46,7 +46,7 @@ export function createMemoryStore({clock=Date.now,maxKeys=5000,maxAudit=500}={})
  };
 }
 
-export function createRedisRestStore({url,token,fetchImpl=fetch,timeoutMs=1500,prefix='fw:',auditKey='audit',maxAudit=5000}={}){
+export function createRedisRestStore({url,token,fetchImpl=fetch,timeoutMs=1500,prefix='fw:',auditKey='audit',maxAudit=5000,notifyChanges=false}={}){
  let parsed;
  try{parsed=new URL(url);}catch{throw Error('invalid-store-url');}
  if(parsed.protocol!=='https:'||parsed.username||parsed.password||parsed.port&&parsed.port!=='443'
@@ -92,9 +92,17 @@ export function createRedisRestStore({url,token,fetchImpl=fetch,timeoutMs=1500,p
   async appendAudit(record){
    const line=auditLine(record);
    if(line.length>2048)return {ok:false,reason:'audit-record-too-large'};
+   if(notifyChanges&&/^[a-z0-9-]{1,40}$/.test(record.kind||'')&&record.kind!=='audit-export'){
+    const marker=JSON.stringify({eventId:JSON.parse(line).id,kind:record.kind});
+    const script="redis.call('LPUSH',KEYS[1],ARGV[1]);redis.call('LTRIM',KEYS[1],0,tonumber(ARGV[2])-1);redis.call('SET',KEYS[2],ARGV[3]);return 1";
+    const result=await pipeline([['EVAL',script,'2',prefix+auditKey,prefix+'ten-app-change',line,String(maxAudit),marker]]);
+    return result?.[0]===1?{ok:true,changePending:true}:{ok:false,reason:'store-unavailable'};
+   }
    const out=await pipeline([['LPUSH',prefix+auditKey,line],['LTRIM',prefix+auditKey,'0',String(maxAudit-1)]]);
    return out?{ok:true}:{ok:false,reason:'store-unavailable'};
   },
+  async readPendingChange(){const reply=await pipeline([['GET',prefix+'ten-app-change']]);return reply&&(reply[0]===null||typeof reply[0]==='string')?{ok:true,marker:reply[0]}:{ok:false,reason:'store-unavailable'};},
+  async ackPendingChange(marker){if(typeof marker!=='string'||marker.length>300)return {ok:false,reason:'marker-invalid'};const script="if redis.call('GET',KEYS[1])==ARGV[1] then return redis.call('DEL',KEYS[1]) else return 0 end";const reply=await pipeline([['EVAL',script,'1',prefix+'ten-app-change',marker]]);return reply&&[0,1].includes(reply[0])?{ok:true,cleared:reply[0]===1}:{ok:false,reason:'store-unavailable'};},
   async readAudit(limit){
    const out=await pipeline([['LRANGE',prefix+auditKey,'0',String(limit-1)]],{maxBytes:limit*2400+64});
    return Array.isArray(out?.[0])?{ok:true,lines:out[0].filter(l=>typeof l==='string')}:{ok:false,reason:'store-unavailable'};
@@ -109,13 +117,13 @@ export function storeFromEnv(env=process.env,{fetchImpl=fetch,clock=Date.now}={}
  if(mode==='memory')return {store:createMemoryStore({clock}),error:null};
  if(mode==='render-valkey'){
   try{return {store:createRenderValkeyStore({
-    url:env.FIREWALL_STORE_INTERNAL_URL
+    url:env.FIREWALL_STORE_INTERNAL_URL,notifyChanges:env.FIREWALL_TEN_APP_CHANGE_NOTIFY_ENABLED==='true'
   }),error:null};}
   catch{return {store:null,error:'render-valkey-config-invalid'};}
  }
  if(mode!=='redis-rest')return {store:null,error:'store-mode-invalid'};
  try{
-  return {store:createRedisRestStore({url:env.FIREWALL_STORE_REST_URL,token:env.FIREWALL_STORE_REST_TOKEN,fetchImpl}),error:null};
+  return {store:createRedisRestStore({url:env.FIREWALL_STORE_REST_URL,token:env.FIREWALL_STORE_REST_TOKEN,fetchImpl,notifyChanges:env.FIREWALL_TEN_APP_CHANGE_NOTIFY_ENABLED==='true'}),error:null};
  }catch(error){return {store:null,error:String(error.message||'store-config-invalid')};}
 }
 

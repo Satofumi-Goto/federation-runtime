@@ -59,7 +59,7 @@ function parse(buf,from=0){
  }
  throw Error('redis-response-type-not-allowed');
 }
-export function createRenderValkeyStore({url,timeoutMs=1600,transport=net.createConnection,prefix='fw:',maxAudit=1000}={}){
+export function createRenderValkeyStore({url,timeoutMs=1600,transport=net.createConnection,prefix='fw:',maxAudit=1000,notifyChanges=false}={}){
  let endpoint;
  try{endpoint=new URL(url);}catch{throw Error('invalid-private-valkey-url');}
  if(endpoint.protocol!=='redis:'||endpoint.port!=='6379'||!RENDER_HOST.test(endpoint.hostname)
@@ -119,13 +119,21 @@ export function createRenderValkeyStore({url,timeoutMs=1600,transport=net.create
   },
   async appendAudit(record){
    // Unique id: identical events stay distinct in the durable sink.
-   const line=JSON.stringify({...record,id:randomUUID()});
+   const id=randomUUID(),line=JSON.stringify({...record,id});
    if(line.length>2048)return {ok:false,reason:'audit-record-too-large'};
+   if(notifyChanges&&/^[a-z0-9-]{1,40}$/.test(record.kind||'')&&record.kind!=='audit-export'){
+    const marker=JSON.stringify({eventId:id,kind:record.kind});
+    const script="redis.call('LPUSH',KEYS[1],ARGV[1]);redis.call('LTRIM',KEYS[1],0,tonumber(ARGV[2])-1);redis.call('SET',KEYS[2],ARGV[3]);return 1";
+    const saved=await run([['EVAL',script,'2',prefix+'audit',prefix+'ten-app-change',line,String(maxAudit),marker]]);
+    return saved?.[0]===1?{ok:true,changePending:true}:{ok:false,reason:'store-unavailable'};
+   }
    const replies=await run([['LPUSH',prefix+'audit',line],['LTRIM',prefix+'audit','0',String(maxAudit-1)]]);
    if(!replies||!Number.isSafeInteger(replies[0])||replies[0]<1||replies[1]!=='OK')
     return {ok:false,reason:'store-unavailable'};
    return {ok:true};
   },
+  async readPendingChange(){const reply=await run([['GET',prefix+'ten-app-change']]);return reply&&(reply[0]===null||typeof reply[0]==='string')?{ok:true,marker:reply[0]}:{ok:false,reason:'store-unavailable'};},
+  async ackPendingChange(marker){if(typeof marker!=='string'||marker.length>300)return {ok:false,reason:'marker-invalid'};const script="if redis.call('GET',KEYS[1])==ARGV[1] then return redis.call('DEL',KEYS[1]) else return 0 end";const reply=await run([['EVAL',script,'1',prefix+'ten-app-change',marker]]);return reply&&[0,1].includes(reply[0])?{ok:true,cleared:reply[0]===1}:{ok:false,reason:'store-unavailable'};},
   async readAudit(limit){
    // Each record is at most 2048 bytes; the reply bound follows the requested count.
    const replies=await run([['LRANGE',prefix+'audit','0',String(limit-1)]],{maxReply:limit*2100+64});

@@ -24,9 +24,11 @@
     "package.json": "99d449cc8a3c84cd2ef8b1c7fd11b23e60827095",
     "policy.mjs": "723ddcca9a7d6b01dc28755921a347c4fbb44071",
     "registeredAi.mjs": "1fde95a648fb5c32fe5ceb0674d8eb6648879c0f",
-    "renderValkey.mjs": "90af7cd820081ef87e3768d0e0f08144dd178d62",
-    "server.mjs": "f480eee21a6ba2db1a1fb27c87abf8ac06731f54",
-    "store.mjs": "81707f90f76cb4457a6220d1622e23a42c9eaec9",
+    "renderValkey.mjs": "84598d37497f035c7a4e48fc1a09eac7ea05f3e0",
+    "server.mjs": "126bf13b24311e3c4c7f4879c68722c41ef8ba4a",
+    "store.mjs": "b64b23e8f5aac74f6bfe975003a8ab91a8aec496",
+    "tenAppChangeContract.mjs": "cfadcebd112555203205a276110d0114846304be",
+    "tenAppChanges.mjs": "b0f2c1d238cf928bd85535adee668a3c1e9655d1",
     "test/acquisition-ledger.test.mjs": "39c7412b729a287cdf3405a2006a4858f8a6f218",
     "test/activity-acquisition.test.mjs": "e2aac3d781ab3bf23183e42e9b46db0a2183e7d3",
     "test/activity-anilist-fixed.test.mjs": "3d6ee47fe85eb7ab5b3098360323a3e29c28c3f4",
@@ -53,6 +55,7 @@
     "test/server.test.mjs": "78082190f7da504db21c4db4996014ed57fee159",
     "test/shared-route-guards.test.mjs": "efb55a83dcc50f72a3589e973405ce1779e3ad70",
     "test/store.test.mjs": "ab1897300775a718e04c46ca6d04641bba6a0af6",
+    "test/ten-app-change.test.mjs": "9bd0355e17d336375aebc795a257f86a7af03cde",
     "test/ui-csp.test.mjs": "03ea0b110330ec29e4f11058762ba0b9ff6dc27d",
     "tools/edge-negative-check.mjs": "74b07a7a411633ee04484d7739b39bea746e5042",
     "ui.mjs": "b85fd453aad97a347b6d8d82bfa24b54fb220e90"
@@ -66,6 +69,12 @@
     "test/acquisition-ledger.test.mjs": "95c35b5da50775a3d918377b5a78cbba8f2e9a15",
     "test/origins.test.mjs": "95c35b5da50775a3d918377b5a78cbba8f2e9a15",
     "registeredAi.mjs": "0baec483afa9b519df46e854af3e8f79aa248652",
-    "test/registered-ai.test.mjs": "0baec483afa9b519df46e854af3e8f79aa248652"
+    "test/registered-ai.test.mjs": "0baec483afa9b519df46e854af3e8f79aa248652",
+    "renderValkey.mjs": "6b8302a05f43d814205289695686eb4df8b2e618",
+    "server.mjs": "6b8302a05f43d814205289695686eb4df8b2e618",
+    "store.mjs": "6b8302a05f43d814205289695686eb4df8b2e618",
+    "tenAppChangeContract.mjs": "6b8302a05f43d814205289695686eb4df8b2e618",
+    "tenAppChanges.mjs": "6b8302a05f43d814205289695686eb4df8b2e618",
+    "test/ten-app-change.test.mjs": "6b8302a05f43d814205289695686eb4df8b2e618"
   }
 }
