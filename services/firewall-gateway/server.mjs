@@ -17,7 +17,7 @@ import {renderConsole} from './ui.mjs';
 import {independentApps,INDEPENDENT_ORIGINS,SERVING_HOSTS} from './origins.mjs';
 import {publicAcquisitionLedger} from './acquisitionLedger.mjs';
 import {storeFromEnv,createSharedGuards} from './store.mjs';
-import {precheckSignedHeaders,declaredTooLarge,findSecret} from './hardening.mjs';
+import {precheckSignedHeaders,declaredTooLarge,findSecret,hasPersonalData} from './hardening.mjs';
 
 const SECURITY_HEADERS=Object.freeze({
  'Cache-Control':'no-store',
@@ -39,6 +39,15 @@ function page(res,status,body,nonce){
  res.writeHead(status,{...SECURITY_HEADERS,'Content-Type':'text/html; charset=utf-8',
   'Content-Security-Policy':safeCsp(nonce)});
  res.end(body);
+}
+export const PRACTICE_RECEIPT_SCHEMA='federation.practice-gateway/1';
+const PRACTICE_DECISIONS=new Set(['go','conditional','suspend']);
+export function validPracticeReceipt(c){
+ return !!c&&typeof c==='object'&&!Array.isArray(c)&&Object.keys(c).sort().join()==='cursor,decisions,incidents,schema'
+  &&c.schema===PRACTICE_RECEIPT_SCHEMA&&Number.isSafeInteger(c.cursor)&&c.cursor>=0&&Number.isSafeInteger(c.incidents)&&c.incidents>=0&&c.incidents<=50000
+  &&Array.isArray(c.decisions)&&c.decisions.length<=20&&c.decisions.every(d=>d&&typeof d==='object'&&Object.keys(d).sort().join()==='area,decision'
+   &&typeof d.area==='string'&&d.area.length<=40&&/^[\p{L}\p{N}\p{M} 　・ー_（）()/-]*$/u.test(d.area)
+   &&!hasPersonalData([d.area.normalize('NFKC')])&&!findSecret([d.area])&&PRACTICE_DECISIONS.has(d.decision));
 }
 async function limitedBody(req,max=512){
  if(Number(req.headers['content-length'])>max)throw Error('request-too-large');
@@ -96,7 +105,8 @@ export function readinessStatus({env=process.env,distributed=false,observed={}}=
   // Measured in this process (additive; never promotes the boolean flags above).
   observed:{signedServerToServerClients:[...(observed.signedClients||[])].sort(),
    durableAuditExport:{lastExportAt:observed.lastAuditExportAt||null,exportsThisProcess:observed.auditExports||0,
-    sink:'federation-api PostgreSQL append-only table (pulled with the federation HMAC key)'}},
+    sink:'federation-api PostgreSQL append-only table (pulled with the federation HMAC key)'},
+   practiceRelay:{cursor:observed.practiceCursor||0,receivedAt:observed.practiceReceivedAt||null,durable:false,storage:'memory'}},
   pending:{storageIndependent:storageReason,
    authenticatedE2E:'no user-facing signed app-to-gateway E2E; GitHub OIDC and Activity HMAC canaries are diagnostic only',
    dnsVerified:'onrender.com subdomain only; no custom domain or DNS verification',
@@ -177,6 +187,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  ]));
  const signedClients=new Set();
  const auditExport={lastAt:null,count:0};
+ const practiceReceipt={cursor:0,incidents:0,decisions:[],receivedAt:null,count:0};
  const head=gitHead(env);
  const selfOrigin=INDEPENDENT_ORIGINS['firewall-gateway'];
  const apps=()=>independentApps(auth.configuredIds(),signedClients);
@@ -240,7 +251,8 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     return reply(res,200,parentStatus(selfOrigin));
    if(req.method==='GET'&&path==='/_status/readiness')
     return reply(res,200,readinessStatus({env,distributed:!!sharedStore,
-      observed:{signedClients,lastAuditExportAt:auditExport.lastAt,auditExports:auditExport.count}}));
+      observed:{signedClients,lastAuditExportAt:auditExport.lastAt,auditExports:auditExport.count,
+       practiceCursor:practiceReceipt.cursor,practiceReceivedAt:practiceReceipt.receivedAt}}));
    if(req.method==='GET'&&path==='/api/status')
     return reply(res,200,{service:'federation-firewall-gateway',stage:'shadow-hold',
       configuredClients:auth.configured,configuredClientIds:[...auth.configuredIds()].sort(),
@@ -472,6 +484,46 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     auditExport.lastAt=new Date(clock()).toISOString();auditExport.count++;
     return reply(res,200,{ok:true,schema:'federation.firewall-audit-export/1',order:'newest-first',
       count:read.lines.length,records:read.lines});
+   }
+   // 10アプリ同時同期：federation-api が運行実務の中継の最新の受付番号と運行判断の要約を知らせる（Federation の署名だけ）。
+   // 本文欄は拒否し、区域の連絡先・秘密情報の既知パターンを拒否する（任意の氏名まで判別する保証ではない）。
+   // プロセス内の一時状態のみ。永続保存や全アプリ受領の証拠ではない。監査・変更通知は増やさない。
+   if(path==='/api/v1/practice/receive'){
+    if(req.headers.origin||req.headers.cookie||req.headers.authorization||req.headers['sec-fetch-site'])
+     return reply(res,403,{ok:false,reason:'server-to-server-only'});
+    if(req.method!=='POST')return reply(res,405,{ok:false,reason:'method-not-allowed'});
+    if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
+     return reply(res,415,{ok:false,reason:'json-required'});
+    if(declaredTooLarge(req,2048))
+     return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});
+    const pre=precheckSignedHeaders(req,clock);
+    if(!pre.ok)return reply(res,pre.status,{ok:false,reason:pre.reason},{Connection:'close'});
+    let body;
+    try{body=await limitedBody(req,2048);}
+    catch{return reply(res,413,{ok:false,reason:'request-too-large'},{Connection:'close'});}
+    if(req.headers['x-fw-client']!=='federation')return reply(res,403,{ok:false,reason:'federation-only'});
+    const identity=auth.verify(req,body,path);
+    if(!identity.ok)return reply(res,identity.status,{ok:false,reason:identity.reason});
+    let command;
+    try{command=JSON.parse(body);}catch{return reply(res,400,{ok:false,reason:'invalid-json'});}
+    if(!validPracticeReceipt(command))return reply(res,400,{ok:false,reason:'unsupported-command'});
+    if(requireShared){
+     if(!sharedGuards)return reply(res,503,{ok:false,reason:'security-store-unavailable'});
+     const replay=await sharedGuards.replay(identity.client,req.headers['x-fw-nonce']);
+     if(!replay.ok)return reply(res,replay.status,{ok:false,reason:replay.reason});
+    }
+    // This is a volatile observation, never proof of durable storage or app-wide sync.
+    const stale=practiceReceipt.receivedAt!==null&&command.cursor<practiceReceipt.cursor;
+    const duplicate=practiceReceipt.receivedAt!==null&&command.cursor===practiceReceipt.cursor;
+    if(duplicate&&(command.incidents!==practiceReceipt.incidents||command.decisions.length!==practiceReceipt.decisions.length||command.decisions.some((d,i)=>d.area!==practiceReceipt.decisions[i].area||d.decision!==practiceReceipt.decisions[i].decision)))
+     return reply(res,409,{ok:false,reason:'cursor-content-conflict',durable:false,storage:'memory'});
+    if(!stale){
+     Object.assign(practiceReceipt,{cursor:command.cursor,incidents:command.incidents,decisions:command.decisions});
+     practiceReceipt.receivedAt=new Date(clock()).toISOString();practiceReceipt.count++;
+    }
+    return reply(res,200,{ok:true,schema:PRACTICE_RECEIPT_SCHEMA,cursor:practiceReceipt.cursor,
+     requestCursor:command.cursor,memoryReceived:!stale,status:stale?'stale':duplicate?'duplicate':'received',
+     durable:false,storage:'memory',receivedAt:practiceReceipt.receivedAt});
    }
    if(path==='/api/v1/shadow/probe'){
     // A server-to-server signature must never be accepted from a browser

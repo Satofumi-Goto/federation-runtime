@@ -8,9 +8,9 @@ const files=new Map(Object.keys(manifest.files).map(name=>[
  name,readFileSync(new URL('../../services/firewall-gateway/'+name,import.meta.url),'utf8')
 ]));
 
-test('pinned canonical source includes all 53 reviewed files verbatim',()=>{
+test('pinned canonical source includes all 54 reviewed files verbatim',()=>{
  assert.equal(verifyOnDisk().ok,true);
- assert.equal(verifyAttestation(manifest,files).verifiedFiles,53);
+ assert.equal(verifyAttestation(manifest,files).verifiedFiles,54);
 });
 
 test('Git content-object hash calculation is stable',()=>{
@@ -44,7 +44,8 @@ test('deny path traversal even if attacker invents a matching blob hash',()=>{
  const values=new Map(files);
  values.delete('ui.mjs');
  values.set('../other/ui.mjs',files.get('ui.mjs'));
- assert.throws(()=>verifyAttestation({...manifest,files:hashes},values),/unsafe pinned path/);
+ const provenance={...manifest.canonicalFileCommits};delete provenance['ui.mjs'];
+ assert.throws(()=>verifyAttestation({...manifest,files:hashes,canonicalFileCommits:provenance},values),/unsafe pinned path/);
 });
 
 test('supporting canonical config is pinned by exact blob and cannot drift',async()=>{
