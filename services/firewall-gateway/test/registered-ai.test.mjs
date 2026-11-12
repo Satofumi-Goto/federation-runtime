@@ -137,3 +137,12 @@ test('registered calls use the existing signed gateway boundary',async()=>{
   assert.equal(result.status,200);assert.equal((await result.json()).provider,'groq');assert.equal(calls,1);
  }finally{await new Promise(resolve=>app.server.close(resolve));}
 });
+
+test('Groq uses the free-plan-listed fixed model and bounded reasoning request',async()=>{
+ let sent;
+ const ai=createRegisteredAi({env:setup('groq'),fetchImpl:async(url,init)=>{sent=JSON.parse(init.body);assert.equal(url,'https://api.groq.com/openai/v1/chat/completions');return response('OK');}});
+ const r=await ai.chat('federation',{...command('groq'),maxTokens:256});
+ assert.equal(r.status,200);assert.equal(r.result.model,'openai/gpt-oss-20b');
+ assert.equal(sent.model,'openai/gpt-oss-20b');assert.equal(sent.max_completion_tokens,256);assert.equal(sent.max_tokens,undefined);assert.equal(sent.reasoning_effort,'low');
+ assert.equal(ai.info().providers.find(p=>p.id==='groq').requestsToday,1);
+});
