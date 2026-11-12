@@ -130,7 +130,8 @@ export function storeFromEnv(env=process.env,{fetchImpl=fetch,clock=Date.now}={}
 // Async guards built on the store. Both deny when the store cannot answer.
 // Keyless free-AI relays cost nothing upstream and have their own per-provider and per-client limits
 // (freeAi.mjs), so they get a separate bucket instead of the paid-upstream budget.
-export const SHARED_BUDGET_POOLS=Object.freeze({'free-ai':Object.freeze({total:60,perClient:30})});
+// Read-only local audit export never consumes the paid upstream or free-AI budgets.
+export const SHARED_BUDGET_POOLS=Object.freeze({'free-ai':Object.freeze({total:60,perClient:30}),'audit-export':Object.freeze({total:60,perClient:30})});
 export function createSharedGuards(store,{replayTtlMs=120000,windowMs=60000,limits={total:20,perClient:6},pools=SHARED_BUDGET_POOLS}={}){
  if(!store)throw Error('store-required');
  async function replay(client,nonce){
