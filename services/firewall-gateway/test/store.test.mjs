@@ -113,3 +113,15 @@ test('audit records are size-bounded and trimmed; token never appears in records
  assert.deepEqual(await s.appendAudit({big:'x'.repeat(3000)}),{ok:false,reason:'audit-record-too-large'});
  assert.ok(![...redis.data.values()].some(v=>JSON.stringify(v.v).includes(TOKEN)));
 });
+
+
+test('local audit exports remain bounded and do not exhaust paid or free-AI request budgets',async()=>{
+ const now=4_000_001*60000,redis=fakeRedis({clock:()=>now});
+ const g=createSharedGuards(createRedisRestStore({url:URL_OK,token:TOKEN,fetchImpl:redis.fetchImpl}));
+ for(let i=0;i<30;i++)assert.equal((await g.budget('federation',now,'audit-export')).ok,true);
+ assert.equal((await g.budget('federation',now,'audit-export')).status,429,'audit export retains its own limit');
+ for(let i=0;i<6;i++)assert.equal((await g.budget('federation',now)).ok,true);
+ assert.equal((await g.budget('federation',now)).status,429,'paid request limit remains 6 per client');
+ for(let i=0;i<30;i++)assert.equal((await g.budget('federation',now,'free-ai')).ok,true);
+ assert.equal((await g.budget('federation',now,'free-ai')).status,429,'free-AI limit remains unchanged');
+});

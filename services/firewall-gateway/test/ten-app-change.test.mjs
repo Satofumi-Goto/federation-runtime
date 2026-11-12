@@ -24,7 +24,7 @@ test('idle startup and empty change hint leave no recurring timer or external ca
 });
 test('burst sends latest marker once with fixed scoped signed request',async()=>{
  const h=harness();for(let n=1;n<=20;n++){h.pending=marker(n);h.notifier.changed();}
- assert.equal(h.timers.size,1);await h.fire();assert.equal(h.calls.length,1);assert.equal(h.pending,null);assert.equal(h.timers.size,0);
+ assert.equal(h.timers.size,1);assert.equal([...h.timers.values()][0].delay,5000);await h.fire();assert.equal(h.calls.length,1);assert.equal(h.pending,null);assert.equal(h.timers.size,0);
  const {url,request}=h.calls[0];assert.equal(url,CHANGE_URL);assert.equal(request.method,'POST');assert.equal(request.redirect,'error');assert.equal(request.credentials,'omit');
  assert.deepEqual(request.headers,signChange(request.body,key,123456789));assert.equal(JSON.parse(request.body).eventId,JSON.parse(marker(20)).eventId);
 });

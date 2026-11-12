@@ -146,7 +146,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
   if(!sharedGuards||!sharedStore)return {ok:false,status:503,reason:'security-store-unavailable'};
   const replay=await sharedGuards.replay(client,nonce);
   if(!replay.ok)return replay;
-  const budget=await sharedGuards.budget(client,clock(),kind==='free-ai'?'free-ai':null);
+  const budget=await sharedGuards.budget(client,clock(),['free-ai','audit-export'].includes(kind)?kind:null);
   if(!budget.ok)return budget;
   try{
    const audit=await sharedStore.appendAudit({

@@ -96,3 +96,17 @@ test('identical events stay distinct: every exported line carries a unique id',a
   assert.deepEqual(rest,rest2);
  });
 });
+
+test('signed audit exports have an independent bounded budget and cannot exhaust upstream requests',async()=>{
+ await withGateway(distributedEnv,async origin=>{
+  for(let i=0;i<30;i++)assert.equal((await exportCall(origin,{body:'{"limit":1}'})).status,200);
+  assert.equal((await exportCall(origin)).status,429);
+  const body=JSON.stringify({routeId:'ten-app-budget-proof'}),path='/api/v1/shadow/probe';
+  for(let i=0;i<6;i++){
+   const r=await fetch(origin+path,{method:'POST',body,headers:{'content-type':'application/json',...signHeaders({client:'federation',key:fed,body,path,time:NOW})}});
+   assert.notEqual((await r.json()).reason,'upstream-budget-exhausted');
+  }
+  const r=await fetch(origin+path,{method:'POST',body,headers:{'content-type':'application/json',...signHeaders({client:'federation',key:fed,body,path,time:NOW})}});
+  assert.equal(r.status,429);assert.equal((await r.json()).reason,'upstream-budget-exhausted');
+ });
+});
