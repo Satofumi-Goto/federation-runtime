@@ -1,7 +1,7 @@
 {
   "schema": "federation.firewall-source-attestation/1",
   "canonicalRepository": "Satofumi-Goto/federation-portal",
-  "canonicalCommit": "c05222ddc9135ae3bd746490b9cd5d764d1c24c1",
+  "canonicalCommit": "cac784e39d1cf800bcc08dfd3cbf9d81e6a70712",
   "sourcePath": "services/firewall-gateway",
   "distributionRepository": "Satofumi-Goto/federation-runtime",
   "verification": "full-file-Git-blob-sha1",
