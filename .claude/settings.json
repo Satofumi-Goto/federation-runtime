@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[Federation必須] 最初に mcp Federation_Memory で memory_get(projectId=federation, documentId=owner-profile-casebook) と memory_search(依頼の主要語) を実行し、作業案件なら team_status を確認してから着手すること。詳細は CLAUDE.md。'"
+          }
+        ]
+      }
+    ]
+  }
+}
