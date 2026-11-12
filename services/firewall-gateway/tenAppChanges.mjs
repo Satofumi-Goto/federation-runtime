@@ -1,7 +1,7 @@
 // Sends only durable change hints. A timer exists solely while a change/retry is pending.
 import {CHANGE_SCHEMA,CHANGE_URL,signChange,validChange} from './tenAppChangeContract.mjs';
 function selectedKey(env){try{const source=env.FIREWALL_TEN_APP_CHANGE_KEY_SOURCE||'free-ai';if(source==='free-ai')return env.FIREWALL_FREE_AI_FEDERATION_KEY||'';const ring=JSON.parse(env.FIREWALL_CLIENT_KEYS_JSON||'{}').federation,keys=Array.isArray(ring)?ring:[ring];return source==='main-current'?keys[0]||'':source==='main-next'?keys[1]||'':'';}catch{return '';}}
-export function createTenAppChanges({env=process.env,store,fetchImpl=fetch,clock=Date.now,setTimer=setTimeout,clearTimer=clearTimeout,observe=()=>{},debounceMs=500}={}){
+export function createTenAppChanges({env=process.env,store,fetchImpl=fetch,clock=Date.now,setTimer=setTimeout,clearTimer=clearTimeout,observe=()=>{},debounceMs=5000}={}){
  const key=selectedKey(env),enabled=env.FIREWALL_TEN_APP_CHANGE_NOTIFY_ENABLED==='true'&&/^[A-Za-z0-9_-]{43}$/.test(key)&&typeof store?.readPendingChange==='function'&&typeof store?.ackPendingChange==='function';
  let timer=null,running=false,stopped=false,queued=false,failures=0;
  const emit=result=>{try{observe({type:'firewall.ten-app-change',...result});}catch{}};
