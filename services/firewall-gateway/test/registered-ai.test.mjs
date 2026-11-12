@@ -25,18 +25,41 @@ test('all seven fixed hosts receive only their own credential; no keys in status
  for(const id of Object.keys(REGISTERED_AI_PROVIDERS)){
   const ai=createRegisteredAi({env:setup(id,{CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32)}),fetchImpl:async(url,init)=>{
    assert.equal(init.redirect,'manual');assert.equal(init.credentials,'omit');
-   assert.equal(init.headers.Authorization,'Bearer '+key);
+   if(id==='gemini'){
+    assert.equal(init.headers['x-goog-api-key'],key);
+    assert.equal(init.headers.Authorization,undefined);
+    assert.ok(url.endsWith('/models/gemini-2.5-flash:generateContent'));
+   }else assert.equal(init.headers.Authorization,'Bearer '+key);
    assert.equal(url.includes(key),false);
    const body=JSON.parse(init.body);
    if(id==='openrouter'){
     assert.ok(body.model.endsWith(':free'));assert.deepEqual(body.provider.max_price,{prompt:0,completion:0});
    }
-   return id==='cloudflare'?Response.json({result:{response:'OK '+key}}):response('OK '+key);
+   return id==='gemini'?Response.json({candidates:[{content:{parts:[{text:'OK '+key}]}}]})
+    :id==='cloudflare'?Response.json({result:{response:'OK '+key}}):response('OK '+key);
   }});
   const result=await ai.chat('federation',command(id));
   assert.equal(result.status,200,id);assert.equal(result.result.text.includes(key),false);
   assert.equal(JSON.stringify(ai.info()).includes(key),false);
  }
+});
+test('Gemini native request maps roles, excludes thinking text and reports only numeric upstream status',async()=>{
+ const ai=createRegisteredAi({env:setup('gemini'),fetchImpl:async(url,init)=>{
+  const body=JSON.parse(init.body);
+  assert.deepEqual(body.systemInstruction,{parts:[{text:'Be concise'}]});
+  assert.deepEqual(body.contents.map(m=>m.role),['user','model','user']);
+  assert.deepEqual(body.generationConfig,{maxOutputTokens:1024,thinkingConfig:{thinkingBudget:0}});
+  return Response.json({candidates:[{content:{parts:[{thought:true,text:'hidden thought'},{text:'OK'}]}}]});
+ }});
+ const c=command('gemini');c.messages=[{role:'system',content:'Be concise'},{role:'user',content:'Hi'},
+  {role:'assistant',content:'Hello'},{role:'user',content:'Reply OK'}];
+ const r=await ai.chat('federation',c);
+ assert.equal(r.result.text,'OK');assert.equal(ai.info().providers.find(p=>p.id==='gemini').lastHttpStatus,200);
+ const failed=createRegisteredAi({env:setup('gemini'),fetchImpl:async()=>Response.json({error:{message:key}},{status:401})});
+ const denial=await failed.chat('federation',command('gemini'));
+ assert.equal(denial.result.error,'provider-auth-or-budget-refused');
+ assert.equal(failed.info().providers.find(p=>p.id==='gemini').lastHttpStatus,401);
+ assert.equal(JSON.stringify([denial,failed.info()]).includes(key),false);
 });
 test('privacy defaults block code and contact data; Gemini/Mistral cannot override training restriction',async()=>{
  let calls=0;
