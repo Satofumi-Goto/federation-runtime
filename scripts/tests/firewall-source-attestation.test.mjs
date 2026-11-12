@@ -8,13 +8,18 @@ const files=new Map(Object.keys(manifest.files).map(name=>[
  name,readFileSync(new URL('../../services/firewall-gateway/'+name,import.meta.url),'utf8')
 ]));
 
-test('pinned canonical source includes all 48 reviewed files verbatim',()=>{
+test('pinned canonical source includes all 50 reviewed files verbatim',()=>{
  assert.equal(verifyOnDisk().ok,true);
- assert.equal(verifyAttestation(manifest,files).verifiedFiles,48);
+ assert.equal(verifyAttestation(manifest,files).verifiedFiles,50);
 });
 
 test('Git content-object hash calculation is stable',()=>{
  assert.equal(gitBlobSha('hello\n'),'ce013625030ba8dba906f756967f9e9ca394464a');
+});
+
+test('older canonical file provenance must name pinned files and immutable commits',()=>{
+ assert.throws(()=>verifyAttestation({...manifest,canonicalFileCommits:{'../other':'a'.repeat(40)}},files),/provenance path/);
+ assert.throws(()=>verifyAttestation({...manifest,canonicalFileCommits:{'README.md':'latest'}},files),/canonical commit/);
 });
 
 test('deny any source alteration, even when route remains the same',()=>{

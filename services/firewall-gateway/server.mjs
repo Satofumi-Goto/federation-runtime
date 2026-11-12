@@ -10,6 +10,7 @@ import {createActivityAcquisition,validateEventQuery,NEWS_SOURCE_IDS,TOKYO_EVENT
 import {createGithubCanaryVerifier} from './githubCanary.mjs';
 import {createAssistant,parseAssistantCommand,ASSISTANT_PATH,ASSISTANT_MAX_BODY,ASSISTANT_POLICY} from './assistant.mjs';
 import {createFreeAi,parseFreeAiCommand,FREE_AI_PATH,FREE_AI_MAX_BODY,FREE_AI_POLICY} from './freeAi.mjs';
+import {createRegisteredAi,registeredProvider,parseRegisteredAiCommand} from './registeredAi.mjs';
 import {publicCatalog,publicClients,SIGNING_CONTRACT} from './policy.mjs';
 import {renderConsole} from './ui.mjs';
 import {independentApps,INDEPENDENT_ORIGINS,SERVING_HOSTS} from './origins.mjs';
@@ -156,6 +157,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  }
  const assistant=createAssistant({env,fetchImpl,clock});
  const freeAi=createFreeAi({env,fetchImpl,clock});
+ const registeredAi=createRegisteredAi({env,fetchImpl,clock});
  // Dedicated free-AI credential for the federation client only. It authorizes the
  // free-AI relay and the read-only audit export, nothing else, and leaves
  // FIREWALL_CLIENT_KEYS_JSON untouched.
@@ -332,8 +334,10 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
    }
    if(req.method==='GET'&&path==='/api/free-ai')
     return reply(res,200,{...FREE_AI_POLICY,...freeAi.info()});
+   if(req.method==='GET'&&path==='/api/registered-ai')
+    return reply(res,200,registeredAi.info());
    if(path===FREE_AI_PATH){
-    // Keyless providers only; transport is HMAC server-to-server like the assistant.
+    // Anonymous and explicitly enabled registered providers share the HMAC boundary.
     if(req.headers.origin||req.headers.cookie||req.headers.authorization)
      return reply(res,403,{ok:false,error:'server-to-server-only'});
     if(req.method!=='POST')return reply(res,405,{ok:false,error:'method-not-allowed'});
@@ -355,13 +359,14 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     const shared=await enforceShared(identity.client,req.headers['x-fw-nonce'],'free-ai');
     if(!shared.ok)return reply(res,shared.status,{ok:false,error:shared.reason});
     freeClient=identity.client;signedClients.add(identity.client);
-    const parsed=parseFreeAiCommand(body);
+    const registered=registeredProvider(body);
+    const parsed=registered?parseRegisteredAiCommand(body):parseFreeAiCommand(body);
     if(!parsed.ok)return reply(res,parsed.status,{ok:false,error:parsed.error});
     freeRole=parsed.command.role;
-    // Keyless providers are third parties; a credential must never leave here.
+    // Prompts must not contain credentials, including for registered providers.
     if(findSecret(parsed.command.messages.map(m=>m.content)))
      return reply(res,422,{ok:false,error:'secret-detected'});
-    const result=await freeAi.chat(identity.client,parsed.command);
+    const result=await (registered?registeredAi:freeAi).chat(identity.client,parsed.command);
     freeProvider=result.result.provider||null;
     // Provider id + fixed reason codes only (no prompt, answer, model text or key).
     freeAttempts=Array.isArray(result.result.attempts)?result.result.attempts.slice(0,20).map(a=>({
