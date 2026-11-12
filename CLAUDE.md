@@ -4,12 +4,12 @@
 正本はFederationメモリーの `personal-context-normal-chat-policy-20261112`（confirmed）。
 
 ## 毎回の最初の行動
-1. `memory.get(projectId="federation", documentId="owner-profile-casebook")` で本人プロファイルとケース別判断表を読む。
+1. `memory.get(projectId="federation", documentId="owner-profile-casebook")` で本人プロファイルとケース別判断表（全文の統合版）を読む。要約 `owner-operating-rules` はメモリーに接続した時点で自動で届く。
 2. `memory.search(projectId="federation", query=<依頼の主要語・PR番号・リポジトリ名>)` で関連記録を探す。日本語と英語の両方で検索する。
 3. 実装やレビューの作業なら `team.status(projectId="federation")` を読んで重複と他担当のCLAIMを確認し、`team.record` で `started` を記録する。
 
 ## 作業中
-- 判断は全て `owner-profile-casebook` に従う。まず「0. 判定手順」で場面（S1〜S12）とケースIDを選び、そのケースどおりに動く。
+- 判断は全て `owner-profile-casebook` に従う。まず「0. 判定手順」で場面（S1〜S19）とケースIDを選び、そのケースどおりに動く。
 - 優先順位は「本人の今の発言」＞［確定］＞［実績］＞［推定］（各項目の根拠タグ）。
 - 当てはまるケースが無かった時や本人が訂正した時は、casebook を改版して細分化する（S12）。
 - 新しい決定・訂正・好みが出たら `memory.append` で記録する（決定は decision、訂正は correction、推測は proposal）。ケース表も改版する。
