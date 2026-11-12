@@ -28,7 +28,7 @@ test('all seven fixed hosts receive only their own credential; no keys in status
    if(id==='gemini'){
     assert.equal(init.headers['x-goog-api-key'],key);
     assert.equal(init.headers.Authorization,undefined);
-    assert.ok(url.endsWith('/models/gemini-2.5-flash:generateContent'));
+    assert.ok(url.endsWith('/models/gemini-3.5-flash-lite:generateContent'));
    }else assert.equal(init.headers.Authorization,'Bearer '+key);
    assert.equal(url.includes(key),false);
    const body=JSON.parse(init.body);
@@ -48,7 +48,7 @@ test('Gemini native request maps roles, excludes thinking text and reports only 
   const body=JSON.parse(init.body);
   assert.deepEqual(body.systemInstruction,{parts:[{text:'Be concise'}]});
   assert.deepEqual(body.contents.map(m=>m.role),['user','model','user']);
-  assert.deepEqual(body.generationConfig,{maxOutputTokens:1024,thinkingConfig:{thinkingBudget:0}});
+  assert.deepEqual(body.generationConfig,{maxOutputTokens:1024,thinkingConfig:{thinkingLevel:'minimal'}});
   return Response.json({candidates:[{content:{parts:[{thought:true,text:'hidden thought'},{text:'OK'}]}}]});
  }});
  const c=command('gemini');c.messages=[{role:'system',content:'Be concise'},{role:'user',content:'Hi'},
