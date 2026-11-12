@@ -10,7 +10,7 @@ import {createActivityAcquisition,validateEventQuery,NEWS_SOURCE_IDS,TOKYO_EVENT
 import {createGithubCanaryVerifier} from './githubCanary.mjs';
 import {createAssistant,parseAssistantCommand,ASSISTANT_PATH,ASSISTANT_MAX_BODY,ASSISTANT_POLICY} from './assistant.mjs';
 import {createFreeAi,parseFreeAiCommand,FREE_AI_PATH,FREE_AI_MAX_BODY,FREE_AI_POLICY} from './freeAi.mjs';
-import {createRegisteredAi,registeredProvider,parseRegisteredAiCommand} from './registeredAi.mjs';
+import {createRegisteredAi,registeredProvider,parseRegisteredAiCommand,REGISTERED_AI_PROVIDERS} from './registeredAi.mjs';
 import {publicCatalog,publicClients,SIGNING_CONTRACT} from './policy.mjs';
 import {renderConsole} from './ui.mjs';
 import {independentApps,INDEPENDENT_ORIGINS,SERVING_HOSTS} from './origins.mjs';
@@ -516,17 +516,35 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
   &&Number(env.FIREWALL_MAX_CONNECTIONS)<=1024?Number(env.FIREWALL_MAX_CONNECTIONS):128;
  server.maxRequestsPerSocket=100;
  server.on('clientError',(_error,socket)=>{if(socket.writable)socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');});
- return {server,auth,access,egress,githubCanary,assistant,freeAi};
+ return {server,auth,access,egress,githubCanary,assistant,freeAi,registeredAi};
+}
+// Owner-controlled, default-off, exactly one bounded public-text call per boot.
+// No endpoint, schedule, retry, prompt/answer log, or new caller authorization.
+export async function probeRegisteredAiOnce(ai,env=process.env,auditSink=console.info){
+ const provider=env.FIREWALL_REGISTERED_AI_PROBE_ON_START;
+ if(typeof provider!=='string'||!Object.hasOwn(REGISTERED_AI_PROVIDERS,provider))return null;
+ let event;
+ try{
+  const r=await ai.chat('federation',{provider,role:'summarize',
+   messages:[{role:'user',content:'Reply with the single word OK.'}],maxTokens:256});
+  const upstream=ai.info().providers.find(p=>p.id===provider);
+  event={type:'firewall.registered-ai.probe',provider,
+   ok:r.status===200&&r.result?.ok===true&&typeof r.result.text==='string'&&!!r.result.text.trim(),
+   httpStatus:r.status,upstreamHttpStatus:upstream?.lastHttpStatus??null};
+ }catch{event={type:'firewall.registered-ai.probe',provider,ok:false,error:'probe-failed'};}
+ try{auditSink(JSON.stringify(event));}catch{/* Diagnostics cannot fail startup. */}
+ return event;
 }
 export function startServer(env=process.env){
  const port=Number(env.PORT||8789);
  if(!Number.isInteger(port)||port<1||port>65535)throw Error('invalid-port');
  const host=env.HOST||'0.0.0.0';
  const app=createGatewayServer({env});
- app.server.listen(port,host,()=>console.log(JSON.stringify({
-  service:'federation-firewall-gateway',stage:'shadow-hold',port,
-  canaryEgressEnabled:app.egress.liveEnabled,cutoverEnabled:false,
- })));
+ app.server.listen(port,host,()=>{
+  console.log(JSON.stringify({service:'federation-firewall-gateway',stage:'shadow-hold',port,
+   canaryEgressEnabled:app.egress.liveEnabled,cutoverEnabled:false}));
+  void probeRegisteredAiOnce(app.registeredAi,env);
+ });
  return app;
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))startServer();

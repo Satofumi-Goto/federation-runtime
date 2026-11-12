@@ -46,7 +46,7 @@ function configFor(id,env){
 }
 export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.now}={}){
  const configs=Object.fromEntries(ids.map(id=>[id,configFor(id,env)]));
- const state=Object.fromEntries(ids.map(id=>[id,{day:'',count:0,minute:[],active:false,stop:false,coolUntil:0,lastHttpStatus:null}]));
+ const state=Object.fromEntries(ids.map(id=>[id,{day:'',count:0,minute:[],active:false,stop:false,coolUntil:0,lastHttpStatus:null,lastErrorStatus:null}]));
  const clients=new Set((env.FIREWALL_FREE_AI_CLIENT_IDS||'federation').split(',').filter(Boolean));
  // Deliberate small ceilings, not assertions about providers' current quotas.
  const limits={perMinute:2,perDay:25,maxOutputTokens:1024};
@@ -87,6 +87,17 @@ export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.n
      ...(id==='gemini'?{'x-goog-api-key':env[spec.key]}:{Authorization:'Bearer '+env[spec.key]})},
     body:JSON.stringify(body),signal:AbortSignal.timeout(FREE_AI_LIMITS.timeoutMs)});
    s.lastHttpStatus=response.status;
+   s.lastErrorStatus=null;
+   if(response.status!==200){
+    try{
+     // Reuse byte/type/redirect bounds for an expected non-2xx error document.
+     const errorBody=await readBoundedJson({ok:true,type:response.type,status:response.status,
+      headers:response.headers,body:response.body},8192);
+     const errorStatus=errorBody?.error?.status;
+     if(['INVALID_ARGUMENT','UNAUTHENTICATED','PERMISSION_DENIED','RESOURCE_EXHAUSTED',
+      'NOT_FOUND','FAILED_PRECONDITION','UNAVAILABLE','INTERNAL'].includes(errorStatus))s.lastErrorStatus=errorStatus;
+    }catch{/* Never expose arbitrary provider error bodies. */}
+   }
    if([401,402,403].includes(response.status)){s.stop=true;return deny(503,'provider-auth-or-budget-refused');}
    if(response.status!==200){s.coolUntil=now+60000;return deny(503,'provider-unavailable');}
    const data=await readBoundedJson(response,FREE_AI_LIMITS.maxResponseBytes);
@@ -110,5 +121,6 @@ export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.n
  return {chat,info:()=>({enabled:ids.some(id=>configs[id].enabled),signedServerToServerOnly:true,
   automaticFallback:false,costVerified:false,limits,
   providers:ids.map(id=>({id,model:REGISTERED_AI_PROVIDERS[id].model,...configs[id],
-   codeRolesAllowed:configs[id].privatePrompts,requestsToday:state[id].count,lastHttpStatus:state[id].lastHttpStatus}))})};
+   codeRolesAllowed:configs[id].privatePrompts,requestsToday:state[id].count,
+   lastHttpStatus:state[id].lastHttpStatus,lastErrorStatus:state[id].lastErrorStatus}))})};
 }
