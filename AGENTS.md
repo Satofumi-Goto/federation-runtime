@@ -9,7 +9,9 @@
 3. 実装やレビューの作業なら `team.status(projectId="federation")` を読んで重複と他担当のCLAIMを確認し、`team.record` で `started` を記録する。
 
 ## 作業中
-- 判断は `owner-profile-casebook` のケース（B1〜）に従う。優先順位は「本人の今の発言」＞「confirmed」＞「proposed」。
+- 判断は全て `owner-profile-casebook` に従う。まず「0. 判定手順」で場面（S1〜S12）とケースIDを選び、そのケースどおりに動く。
+- 優先順位は「本人の今の発言」＞［確定］＞［実績］＞［推定］（各項目の根拠タグ）。
+- 当てはまるケースが無かった時や本人が訂正した時は、casebook を改版して細分化する（S12）。
 - 新しい決定・訂正・好みが出たら `memory.append` で記録する（決定は decision、訂正は correction、推測は proposal）。ケース表も改版する。
 - 完了したら `team.record` で `handoff` または `finished` を記録する。
 
