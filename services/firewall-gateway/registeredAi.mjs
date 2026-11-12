@@ -6,7 +6,7 @@ import {hasPersonalData,redactSecrets} from './hardening.mjs';
 // Only enable a lane after verifying a provider-side free-only account/budget.
 // No automatic fallback from the anonymous relay into these accounts.
 export const REGISTERED_AI_PROVIDERS=Object.freeze({
- gemini:{url:'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',model:'gemini-2.5-flash',key:'GEMINI_API_KEY'},
+ gemini:{url:'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',model:'gemini-3.5-flash-lite',key:'GEMINI_API_KEY'},
  groq:{url:'https://api.groq.com/openai/v1/chat/completions',model:'openai/gpt-oss-20b',key:'GROQ_API_KEY'},
  mistral:{url:'https://api.mistral.ai/v1/chat/completions',model:'mistral-small-latest',key:'MISTRAL_API_KEY'},
  openrouter:{url:'https://openrouter.ai/api/v1/chat/completions',model:'liquid/lfm-2.5-2.6b:free',key:'OPENROUTER_API_KEY'},
@@ -72,7 +72,7 @@ export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.n
    const tokens=Math.min(command.maxTokens,limits.maxOutputTokens);
    const body=id==='gemini'?{
     contents:command.messages.filter(m=>m.role!=='system').map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.content}]})),
-    generationConfig:{maxOutputTokens:tokens,thinkingConfig:{thinkingBudget:0}},
+    generationConfig:{maxOutputTokens:tokens,thinkingConfig:{thinkingLevel:'minimal'}},
    }:{messages:command.messages,max_tokens:tokens,stream:false};
    if(id==='gemini'){
     const system=command.messages.filter(m=>m.role==='system').map(m=>({text:m.content}));
