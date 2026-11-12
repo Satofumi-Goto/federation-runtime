@@ -9,7 +9,7 @@ export const REGISTERED_AI_PROVIDERS=Object.freeze({
  gemini:{url:'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',model:'gemini-2.5-flash',key:'GEMINI_API_KEY'},
  groq:{url:'https://api.groq.com/openai/v1/chat/completions',model:'openai/gpt-oss-20b',key:'GROQ_API_KEY'},
  mistral:{url:'https://api.mistral.ai/v1/chat/completions',model:'mistral-small-latest',key:'MISTRAL_API_KEY'},
- openrouter:{url:'https://openrouter.ai/api/v1/chat/completions',model:'meta-llama/llama-3.3-70b-instruct:free',key:'OPENROUTER_API_KEY'},
+ openrouter:{url:'https://openrouter.ai/api/v1/chat/completions',model:'liquid/lfm-2.5-2.6b:free',key:'OPENROUTER_API_KEY'},
  cerebras:{url:'https://api.cerebras.ai/v1/chat/completions',model:'gpt-oss-120b',key:'CEREBRAS_API_KEY'},
  cloudflare:{model:'@cf/meta/llama-3.1-8b-instruct',key:'CLOUDFLARE_API_TOKEN'},
  nvidia:{url:'https://integrate.api.nvidia.com/v1/chat/completions',model:'meta/llama-3.3-70b-instruct',key:'NVIDIA_API_KEY'},
@@ -84,6 +84,7 @@ export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.n
    if(id==='openrouter'){
     // No model routing to paid endpoints; cap endpoint prices at zero too.
     body.provider={max_price:{prompt:0,completion:0},allow_fallbacks:false};
+    body.reasoning={enabled:false};
    }
    const response=await fetchImpl(url,{method:'POST',redirect:'manual',credentials:'omit',
     headers:{'Content-Type':'application/json',Accept:'application/json',
