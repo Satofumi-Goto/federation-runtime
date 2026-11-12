@@ -6,7 +6,7 @@ import {hasPersonalData,redactSecrets} from './hardening.mjs';
 // Only enable a lane after verifying a provider-side free-only account/budget.
 // No automatic fallback from the anonymous relay into these accounts.
 export const REGISTERED_AI_PROVIDERS=Object.freeze({
- gemini:{url:'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',model:'gemini-2.5-flash',key:'GEMINI_API_KEY'},
+ gemini:{url:'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',model:'gemini-2.5-flash',key:'GEMINI_API_KEY'},
  groq:{url:'https://api.groq.com/openai/v1/chat/completions',model:'llama-3.3-70b-versatile',key:'GROQ_API_KEY'},
  mistral:{url:'https://api.mistral.ai/v1/chat/completions',model:'mistral-small-latest',key:'MISTRAL_API_KEY'},
  openrouter:{url:'https://openrouter.ai/api/v1/chat/completions',model:'meta-llama/llama-3.3-70b-instruct:free',key:'OPENROUTER_API_KEY'},
@@ -46,7 +46,7 @@ function configFor(id,env){
 }
 export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.now}={}){
  const configs=Object.fromEntries(ids.map(id=>[id,configFor(id,env)]));
- const state=Object.fromEntries(ids.map(id=>[id,{day:'',count:0,minute:[],active:false,stop:false,coolUntil:0}]));
+ const state=Object.fromEntries(ids.map(id=>[id,{day:'',count:0,minute:[],active:false,stop:false,coolUntil:0,lastHttpStatus:null}]));
  const clients=new Set((env.FIREWALL_FREE_AI_CLIENT_IDS||'federation').split(',').filter(Boolean));
  // Deliberate small ceilings, not assertions about providers' current quotas.
  const limits={perMinute:2,perDay:25,maxOutputTokens:1024};
@@ -69,22 +69,33 @@ export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.n
   try{
    const url=id==='cloudflare'
     ?'https://api.cloudflare.com/client/v4/accounts/'+env.CLOUDFLARE_ACCOUNT_ID+'/ai/run/'+spec.model:spec.url;
-   const body={messages:command.messages,max_tokens:Math.min(command.maxTokens,limits.maxOutputTokens),stream:false};
-   if(id!=='cloudflare')body.model=spec.model;
+   const tokens=Math.min(command.maxTokens,limits.maxOutputTokens);
+   const body=id==='gemini'?{
+    contents:command.messages.filter(m=>m.role!=='system').map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.content}]})),
+    generationConfig:{maxOutputTokens:tokens,thinkingConfig:{thinkingBudget:0}},
+   }:{messages:command.messages,max_tokens:tokens,stream:false};
+   if(id==='gemini'){
+    const system=command.messages.filter(m=>m.role==='system').map(m=>({text:m.content}));
+    if(system.length)body.systemInstruction={parts:system};
+   }else if(id!=='cloudflare')body.model=spec.model;
    if(id==='openrouter'){
     // No model routing to paid endpoints; cap endpoint prices at zero too.
     body.provider={max_price:{prompt:0,completion:0},allow_fallbacks:false};
    }
    const response=await fetchImpl(url,{method:'POST',redirect:'manual',credentials:'omit',
-    headers:{'Content-Type':'application/json',Accept:'application/json',Authorization:'Bearer '+env[spec.key]},
+    headers:{'Content-Type':'application/json',Accept:'application/json',
+     ...(id==='gemini'?{'x-goog-api-key':env[spec.key]}:{Authorization:'Bearer '+env[spec.key]})},
     body:JSON.stringify(body),signal:AbortSignal.timeout(FREE_AI_LIMITS.timeoutMs)});
+   s.lastHttpStatus=response.status;
    if([401,402,403].includes(response.status)){s.stop=true;return deny(503,'provider-auth-or-budget-refused');}
    if(response.status!==200){s.coolUntil=now+60000;return deny(503,'provider-unavailable');}
    const data=await readBoundedJson(response,FREE_AI_LIMITS.maxResponseBytes);
    if([data?.usage?.cost,data?.usage?.total_cost].some(v=>typeof v==='number'&&v>0)){
     s.stop=true;return deny(503,'paid-usage-reported');
    }
-   const raw=id==='cloudflare'?data?.result?.response:data?.choices?.[0]?.message?.content;
+   const raw=id==='gemini'?(data?.candidates?.[0]?.content?.parts||[])
+    .filter(p=>p?.thought!==true&&typeof p?.text==='string').map(p=>p.text).join('')
+    :id==='cloudflare'?data?.result?.response:data?.choices?.[0]?.message?.content;
    if(typeof raw!=='string'||!raw.trim())return deny(503,'empty-answer');
    // Redact this provider's own key even when its format is not recognized.
    const safe=redactSecrets(raw.split(env[spec.key]).join('[REDACTED]').slice(0,FREE_AI_LIMITS.maxAnswerChars));
@@ -99,5 +110,5 @@ export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.n
  return {chat,info:()=>({enabled:ids.some(id=>configs[id].enabled),signedServerToServerOnly:true,
   automaticFallback:false,costVerified:false,limits,
   providers:ids.map(id=>({id,model:REGISTERED_AI_PROVIDERS[id].model,...configs[id],
-   codeRolesAllowed:configs[id].privatePrompts,requestsToday:state[id].count}))})};
+   codeRolesAllowed:configs[id].privatePrompts,requestsToday:state[id].count,lastHttpStatus:state[id].lastHttpStatus}))})};
 }
