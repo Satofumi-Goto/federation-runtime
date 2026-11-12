@@ -158,3 +158,14 @@ test('OpenRouter pins a current free model and rejects paid endpoint fallback',a
  assert.deepEqual(sent.provider,{max_price:{prompt:0,completion:0},allow_fallbacks:false});
  assert.deepEqual(sent.reasoning,{enabled:false});
 });
+
+
+test('NVIDIA pins the current NVIDIA-hosted model and bounds output',async()=>{
+ let sent;
+ const ai=createRegisteredAi({env:setup('nvidia'),fetchImpl:async(url,options)=>{assert.equal(url,'https://integrate.api.nvidia.com/v1/chat/completions');sent=JSON.parse(options.body);return response('OK');}});
+ const result=await ai.chat('federation',{...command('nvidia'),maxTokens:256});
+ assert.equal(result.status,200);
+ assert.equal(sent.model,'nvidia/nemotron-3.5-lightning-30b-a3b');
+ assert.equal(sent.max_tokens,256);
+ assert.equal(result.result.model,sent.model);
+});

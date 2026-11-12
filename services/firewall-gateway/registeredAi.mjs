@@ -12,7 +12,7 @@ export const REGISTERED_AI_PROVIDERS=Object.freeze({
  openrouter:{url:'https://openrouter.ai/api/v1/chat/completions',model:'liquid/lfm-2.5-2.6b:free',key:'OPENROUTER_API_KEY'},
  cerebras:{url:'https://api.cerebras.ai/v1/chat/completions',model:'gpt-oss-120b',key:'CEREBRAS_API_KEY'},
  cloudflare:{model:'@cf/meta/llama-3.1-8b-instruct',key:'CLOUDFLARE_API_TOKEN'},
- nvidia:{url:'https://integrate.api.nvidia.com/v1/chat/completions',model:'meta/llama-3.3-70b-instruct',key:'NVIDIA_API_KEY'},
+ nvidia:{url:'https://integrate.api.nvidia.com/v1/chat/completions',model:'nvidia/nemotron-3.5-lightning-30b-a3b',key:'NVIDIA_API_KEY'},
 });
 for(const value of Object.values(REGISTERED_AI_PROVIDERS))Object.freeze(value);
 const ids=Object.keys(REGISTERED_AI_PROVIDERS);
