@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
 import {createRegisteredAi,parseRegisteredAiCommand,REGISTERED_AI_PROVIDERS} from '../registeredAi.mjs';
-import {createGatewayServer} from '../server.mjs';
+import {createGatewayServer,probeRegisteredAiOnce} from '../server.mjs';
 import {signHeaders} from '../auth.mjs';
 
 const key='test-provider-credential-not-a-real-key';
@@ -55,11 +55,30 @@ test('Gemini native request maps roles, excludes thinking text and reports only 
   {role:'assistant',content:'Hello'},{role:'user',content:'Reply OK'}];
  const r=await ai.chat('federation',c);
  assert.equal(r.result.text,'OK');assert.equal(ai.info().providers.find(p=>p.id==='gemini').lastHttpStatus,200);
- const failed=createRegisteredAi({env:setup('gemini'),fetchImpl:async()=>Response.json({error:{message:key}},{status:401})});
+ const failed=createRegisteredAi({env:setup('gemini'),fetchImpl:async()=>Response.json({error:{message:key,status:'UNAUTHENTICATED'}},{status:401})});
  const denial=await failed.chat('federation',command('gemini'));
  assert.equal(denial.result.error,'provider-auth-or-budget-refused');
  assert.equal(failed.info().providers.find(p=>p.id==='gemini').lastHttpStatus,401);
+ assert.equal(failed.info().providers.find(p=>p.id==='gemini').lastErrorStatus,'UNAUTHENTICATED');
  assert.equal(JSON.stringify([denial,failed.info()]).includes(key),false);
+});
+test('startup probe defaults off and performs only one fixed bounded call when opted in',async()=>{
+ let calls=0;const logs=[];
+ const ai={chat:async(client,c)=>{
+  calls++;assert.equal(client,'federation');assert.equal(c.provider,'gemini');
+  assert.equal(c.role,'summarize');assert.equal(c.maxTokens,256);
+  assert.deepEqual(c.messages,[{role:'user',content:'Reply with the single word OK.'}]);
+  return {status:200,result:{ok:true,text:key}};
+ },info:()=>({providers:[{id:'gemini',lastHttpStatus:200}]})};
+ assert.equal(await probeRegisteredAiOnce(ai,{},s=>logs.push(s)),null);
+ assert.equal(await probeRegisteredAiOnce(ai,{FIREWALL_REGISTERED_AI_PROBE_ON_START:'https://evil.example'},s=>logs.push(s)),null);
+ assert.equal(calls,0);
+ const r=await probeRegisteredAiOnce(ai,{FIREWALL_REGISTERED_AI_PROBE_ON_START:'gemini'},s=>logs.push(s));
+ assert.equal(r.ok,true);assert.equal(r.upstreamHttpStatus,200);assert.equal(calls,1);
+ assert.equal(JSON.stringify(logs).includes(key),false);
+ const failure=await probeRegisteredAiOnce({chat:async()=>{throw Error(key);}},
+  {FIREWALL_REGISTERED_AI_PROBE_ON_START:'gemini'},()=>{throw Error('sink-down');});
+ assert.equal(failure.error,'probe-failed');assert.equal(JSON.stringify(failure).includes(key),false);
 });
 test('privacy defaults block code and contact data; Gemini/Mistral cannot override training restriction',async()=>{
  let calls=0;
