@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {createTenAppChanges} from './tenAppChanges.mjs';
 import {randomBytes} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {resolve,dirname,join} from 'node:path';
@@ -139,6 +140,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  const resolved=storeFromEnv(env,{fetchImpl,clock});
  const sharedStore=resolved.store?.distributed?resolved.store:null;
  const sharedGuards=sharedStore?createSharedGuards(sharedStore):null;
+ const tenAppChanges=createTenAppChanges({env,store:sharedStore,fetchImpl,clock,observe:record=>auditSink(JSON.stringify(record))});
  async function enforceShared(client,nonce,kind){
   if(!requireShared)return {ok:true};
   if(!sharedGuards||!sharedStore)return {ok:false,status:503,reason:'security-store-unavailable'};
@@ -152,6 +154,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
      client,kind
    });
    if(!audit.ok)return {ok:false,status:503,reason:'security-audit-unavailable'};
+   if(audit.changePending)tenAppChanges.changed();
   }catch{return {ok:false,status:503,reason:'security-audit-unavailable'};}
   return {ok:true};
  }
@@ -516,6 +519,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
   &&Number(env.FIREWALL_MAX_CONNECTIONS)<=1024?Number(env.FIREWALL_MAX_CONNECTIONS):128;
  server.maxRequestsPerSocket=100;
  server.on('clientError',(_error,socket)=>{if(socket.writable)socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');});
+ server.once('listening',()=>tenAppChanges.start());server.once('close',()=>tenAppChanges.stop());
  return {server,auth,access,egress,githubCanary,assistant,freeAi,registeredAi};
 }
 // Owner-controlled, default-off, exactly one bounded public-text call per boot.
