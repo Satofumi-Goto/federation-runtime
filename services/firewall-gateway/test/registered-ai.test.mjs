@@ -146,3 +146,15 @@ test('Groq uses the free-plan-listed fixed model and bounded reasoning request',
  assert.equal(sent.model,'openai/gpt-oss-20b');assert.equal(sent.max_completion_tokens,256);assert.equal(sent.max_tokens,undefined);assert.equal(sent.reasoning_effort,'low');
  assert.equal(ai.info().providers.find(p=>p.id==='groq').requestsToday,1);
 });
+
+
+test('OpenRouter pins a current free model and rejects paid endpoint fallback',async()=>{
+ let sent;
+ const ai=createRegisteredAi({env:setup('openrouter'),fetchImpl:async(_url,options)=>{sent=JSON.parse(options.body);return Response.json({choices:[{message:{content:'OK'}}],usage:{cost:0}});}});
+ const result=await ai.chat('federation',{provider:'openrouter',role:'summarize',messages:[{role:'user',content:'Reply OK.'}],maxTokens:256});
+ assert.equal(result.status,200);
+ assert.equal(sent.model,'liquid/lfm-2.5-2.6b:free');
+ assert.equal(sent.max_tokens,256);
+ assert.deepEqual(sent.provider,{max_price:{prompt:0,completion:0},allow_fallbacks:false});
+ assert.deepEqual(sent.reasoning,{enabled:false});
+});
