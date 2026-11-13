@@ -18,9 +18,9 @@ function harness(options={}){
 test('disabled notifier creates no timer or callback',()=>{
  const h=harness({env:{}});h.notifier.start();h.notifier.changed();assert.equal(h.notifier.enabled,false);assert.equal(h.timers.size,0);assert.equal(h.calls.length,0);
 });
-test('idle startup and empty change hint leave no recurring timer or external call',async()=>{
- const h=harness();h.notifier.start();await h.fire();assert.equal(h.timers.size,0);assert.equal(h.calls.length,0);
- h.notifier.changed();await h.fire();assert.equal(h.timers.size,0);assert.equal(h.calls.length,0);
+test('startup sends one boot hint then healthy idle leaves no recurring timer or callback',async()=>{
+ const h=harness();h.notifier.start();await h.fire();assert.equal(h.timers.size,0);assert.equal(h.calls.length,1);assert.equal(JSON.parse(h.calls[0].request.body).kind,'gateway-started');assert.equal(h.acks.length,0);
+ h.notifier.changed();await h.fire();assert.equal(h.timers.size,0);assert.equal(h.calls.length,1);
 });
 test('burst sends latest marker once with fixed scoped signed request',async()=>{
  const h=harness();for(let n=1;n<=20;n++){h.pending=marker(n);h.notifier.changed();}
@@ -30,7 +30,7 @@ test('burst sends latest marker once with fixed scoped signed request',async()=>
 });
 test('inflight acknowledgement cannot erase a newer pending marker',async()=>{
  let release;const calls=[];const h=harness({pending:marker(1),fetchImpl:async(url,request)=>{calls.push(JSON.parse(request.body));if(calls.length===1)await new Promise(resolve=>{release=resolve;});return Response.json({ok:true,schema:CHANGE_SCHEMA,eventId:JSON.parse(request.body).eventId,accepted:true});}});
- h.notifier.start();await h.fire();h.pending=marker(2);h.notifier.changed();release();await flush();assert.equal(h.pending,marker(2));assert.equal(h.timers.size,1);await h.fire();assert.equal(calls.length,2);assert.equal(h.pending,null);assert.equal(h.timers.size,0);
+ h.notifier.start();await h.fire();h.pending=marker(2);h.notifier.changed();release();await flush();assert.equal(h.pending,marker(2));assert.equal(h.timers.size,1);await h.fire();assert.equal(calls.filter(c=>c.kind!=='gateway-started').length,2);assert.equal(calls.length,3);assert.equal(h.pending,null);assert.equal(h.timers.size,0);
 });
 test('failed callback retries only pending work and restart accepts duplicate acknowledgement',async()=>{
  const h=harness({pending:marker(1),fetchImpl:async()=>new Response('',{status:503})});h.notifier.start();await h.fire();assert.equal(h.pending,marker(1));assert.equal([...h.timers.values()][0].delay,1000);h.notifier.stop();assert.equal(h.timers.size,0);
@@ -69,4 +69,19 @@ test('audit append uses one atomic EVAL and ACK compares the exact marker',async
 test('audit-export does not replace pending marker or emit change hint',async()=>{
  const h=valkeyHarness();await h.store.appendAudit({kind:'shadow-probe'});const before=(await h.store.readPendingChange()).marker;const offset=h.seen.length;
  assert.deepEqual(await h.store.appendAudit({kind:'audit-export'}),{ok:true});assert.deepEqual(h.seen.slice(offset).map(c=>c[0]),['LPUSH','LTRIM']);assert.equal((await h.store.readPendingChange()).marker,before);
+});
+
+test('boot and audit slots drain fairly even when only the boot callback fails',async()=>{
+ const calls=[];const h=harness({pending:marker(1),fetchImpl:async(url,r)=>{const command=JSON.parse(r.body);calls.push(command);return command.kind==='gateway-started'?Response.json({},{status:503}):Response.json({ok:true,schema:CHANGE_SCHEMA,eventId:command.eventId,accepted:true});}});
+ h.notifier.start();await h.fire();assert.equal(calls.length,2);assert.equal(h.pending,null);assert.equal(h.acks.length,1);assert.equal(h.timers.size,1);
+ h.pending=marker(2);await h.fire();assert.equal(calls.length,4);assert.equal(h.pending,null);assert.equal(calls[0].eventId,calls[2].eventId,'same boot epoch retries');h.notifier.stop();
+});
+test('stop/start rejects old boot ACK and old audit ACK while allowing the new generation to drain',async()=>{
+ let release;const calls=[];const h=harness({pending:marker(1),fetchImpl:async(url,r)=>{const command=JSON.parse(r.body);calls.push(command);if(calls.length===1)await new Promise(resolve=>{release=resolve;});return Response.json({ok:true,schema:CHANGE_SCHEMA,eventId:command.eventId,accepted:true});}});
+ h.notifier.start();await h.fire();h.notifier.stop();h.notifier.start();await h.fire();release();await flush();assert.equal(h.acks.length,0);assert.equal(h.pending,marker(1));assert.equal(h.timers.size,1);
+ await h.fire();assert.equal(h.pending,null);assert.equal(h.acks.length,1);assert.notEqual(calls[0].eventId,calls[1].eventId);assert.equal(h.timers.size,0);h.notifier.stop();
+});
+test('startup hint never overwrites a superseding audit marker and duplicate boot ACK is valid',async()=>{
+ const h=harness({pending:marker(1),fetchImpl:async(url,r)=>{const command=JSON.parse(r.body);if(command.kind==='gateway-started')h.pending=marker(2);return Response.json({ok:true,schema:CHANGE_SCHEMA,eventId:command.eventId,accepted:false});}});
+ h.notifier.start();await h.fire();assert.equal(h.pending,marker(2));assert.equal(h.acks[0],marker(1));assert.equal(h.timers.size,1);await h.fire();assert.equal(h.pending,null);assert.equal(h.timers.size,0);h.notifier.stop();
 });
