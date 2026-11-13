@@ -1,6 +1,6 @@
 import http from 'node:http';
 import {createTenAppChanges} from './tenAppChanges.mjs';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {resolve,dirname,join} from 'node:path';
 import {readFileSync} from 'node:fs';
@@ -113,6 +113,7 @@ export function readinessStatus({env=process.env,distributed=false,observed={}}=
    productionReady:'shadow-hold; network WAF, durable audit and user-facing cutover not verified'}};
 }
 export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.now,auditSink=console.info}={}){
+ const bootEpoch=randomUUID(); // One identity per Gateway server lifetime, including disabled notifications.
  const auth=createAuthenticator({env,clock});
  // Activity acquisition uses a dedicated secret; never rotate or overwrite
  // keys of the nine existing Gateway clients to connect this feature.
@@ -150,7 +151,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  const resolved=storeFromEnv(env,{fetchImpl,clock});
  const sharedStore=resolved.store?.distributed?resolved.store:null;
  const sharedGuards=sharedStore?createSharedGuards(sharedStore):null;
- const tenAppChanges=createTenAppChanges({env,store:sharedStore,fetchImpl,clock,observe:record=>auditSink(JSON.stringify(record))});
+ const tenAppChanges=createTenAppChanges({env,store:sharedStore,fetchImpl,clock,bootEpoch,observe:record=>auditSink(JSON.stringify(record))});
  async function enforceShared(client,nonce,kind){
   if(!requireShared)return {ok:true};
   if(!sharedGuards||!sharedStore)return {ok:false,status:503,reason:'security-store-unavailable'};
@@ -523,7 +524,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     }
     return reply(res,200,{ok:true,schema:PRACTICE_RECEIPT_SCHEMA,cursor:practiceReceipt.cursor,
      requestCursor:command.cursor,memoryReceived:!stale,status:stale?'stale':duplicate?'duplicate':'received',
-     durable:false,storage:'memory',receivedAt:practiceReceipt.receivedAt});
+     durable:false,storage:'memory',receivedAt:practiceReceipt.receivedAt,bootEpoch});
    }
    if(path==='/api/v1/shadow/probe'){
     // A server-to-server signature must never be accepted from a browser
