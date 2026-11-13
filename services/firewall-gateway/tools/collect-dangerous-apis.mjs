@@ -25,19 +25,27 @@ export function judgeRdap(data,now=Date.now()){
  if(Number.isFinite(t)&&t-now<30*86400000)return t<now?'domain-expired':'domain-expiring';
  return null;
 }
-export async function collect({fetchImpl=fetch,now=Date.now()}={}){
+// rdap.org は短時間の連続問い合わせを断るため、ドメインごとに間を空け、断られた時は1回だけ待って再試行する。
+export async function collect({fetchImpl=fetch,now=Date.now(),sleep=ms=>new Promise(r=>setTimeout(r,ms)),pauseMs=2500}={}){
  const domains=providerDomains(),cache=new Map(),entries=[],checked=[];
+ const ask=()=>({redirect:'follow',headers:{Accept:'application/rdap+json, application/json',
+  'User-Agent':'FederationFirewall/0.1 (danger-collect; daily)'},signal:AbortSignal.timeout(15000)});
  for(const [provider,domain] of domains){
   if(!cache.has(domain)){
-   let reason=null,ok=false;
-   try{
-    const r=await fetchImpl(RDAP+encodeURIComponent(domain),{redirect:'follow',headers:{Accept:'application/rdap+json'},signal:AbortSignal.timeout(10000)});
-    if(r.ok){const text=await r.text();if(text.length<512000){reason=judgeRdap(JSON.parse(text),now);ok=true;}}
-   }catch{/* 取れなかった時は候補にしない（誤遮断を避ける）。 */}
-   cache.set(domain,{reason,ok});
+   if(cache.size)await sleep(pauseMs);
+   let reason=null,ok=false,status=null;
+   for(let attempt=0;attempt<2&&!ok;attempt++){
+    try{
+     const r=await fetchImpl(RDAP+encodeURIComponent(domain),ask());
+     status=r.status;
+     if(r.ok){const text=await r.text();if(text.length<512000){reason=judgeRdap(JSON.parse(text),now);ok=true;}}
+     else{await r.body?.cancel?.();if(r.status===429&&attempt===0)await sleep(pauseMs*4);else break;}
+    }catch{status=status??'network';/* 取れなかった時は候補にしない（誤遮断を避ける）。 */}
+   }
+   cache.set(domain,{reason,ok,status});
   }
   const c=cache.get(domain);
-  checked.push({provider,domain,checked:c.ok});
+  checked.push({provider,domain,checked:c.ok,...(c.ok?{}:{status:c.status})});
   if(c.reason)entries.push({provider,reason:c.reason,source:'rdap',until:new Date(now+7*86400000).toISOString()});
  }
  return {schema:'federation.dangerous-apis/1',updatedAt:new Date(now).toISOString().slice(0,10),entries,checked};
