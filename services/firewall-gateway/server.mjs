@@ -6,6 +6,7 @@ import {resolve,dirname,join} from 'node:path';
 import {readFileSync} from 'node:fs';
 import {createAuthenticator,keyringHealth} from './auth.mjs';
 import {createAccessVerifier} from './access.mjs';
+import {createRiskGuard} from './riskGuard.mjs';
 import {createEgress} from './egress.mjs';
 import {createActivityAcquisition,validateEventQuery,NEWS_SOURCE_IDS,TOKYO_EVENT_SOURCE_IDS} from './activitySources.mjs';
 import {createGithubCanaryVerifier} from './githubCanary.mjs';
@@ -172,8 +173,9 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
   return {ok:true};
  }
  const assistant=createAssistant({env,fetchImpl,clock});
- const freeAi=createFreeAi({env,fetchImpl,clock});
- const registeredAi=createRegisteredAi({env,fetchImpl,clock});
+ const risk=createRiskGuard({env,clock});
+ const freeAi=createFreeAi({env,fetchImpl,clock,risk});
+ const registeredAi=createRegisteredAi({env,fetchImpl,clock,risk});
  // Dedicated free-AI credential for the federation client only. It authorizes the
  // free-AI relay and the read-only audit export, nothing else, and leaves
  // FIREWALL_CLIENT_KEYS_JSON untouched.
@@ -351,9 +353,9 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});
    }
    if(req.method==='GET'&&path==='/api/free-ai')
-    return reply(res,200,{...FREE_AI_POLICY,...freeAi.info()});
+    return reply(res,200,{...FREE_AI_POLICY,...freeAi.info(),risk:risk.info()});
    if(req.method==='GET'&&path==='/api/registered-ai')
-    return reply(res,200,registeredAi.info());
+    return reply(res,200,{...registeredAi.info(),risk:risk.info()});
    if(path===FREE_AI_PATH){
     // Anonymous and explicitly enabled registered providers share the HMAC boundary.
     if(req.headers.origin||req.headers.cookie||req.headers.authorization)

@@ -1,0 +1,6 @@
+{
+  "schema": "federation.dangerous-apis/1",
+  "note": "公開情報から集めた危険な接続先。収集スクリプト（tools/collect-dangerous-apis.mjs）が候補を出し、レビューを経てここへ入れる。entries の provider は FREE_AI_PROVIDERS・REGISTERED_AI_PROVIDERS の id。",
+  "updatedAt": "2026-11-13",
+  "entries": []
+}

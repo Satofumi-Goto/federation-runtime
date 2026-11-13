@@ -44,7 +44,7 @@ function configFor(id,env){
  const privatePrompts=env[p+'_PRIVATE_PROCESSING_CONFIRMED']==='true'&&!['gemini','mistral'].includes(id);
  return {enabled:!reason,reason:reason||'armed',privatePrompts};
 }
-export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.now}={}){
+export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.now,risk=null}={}){
  const configs=Object.fromEntries(ids.map(id=>[id,configFor(id,env)]));
  const state=Object.fromEntries(ids.map(id=>[id,{day:'',count:0,minute:[],active:false,stop:false,coolUntil:0,lastHttpStatus:null,lastErrorStatus:null}]));
  const clients=new Set((env.FIREWALL_FREE_AI_CLIENT_IDS||'federation').split(',').filter(Boolean));
@@ -55,6 +55,7 @@ export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.n
   const deny=(status,error)=>({status,result:{ok:false,provider:id,error}});
   if(!cfg?.enabled)return deny(503,'registered-ai-disabled');
   if(!clients.has(client))return deny(403,'client-not-allowed');
+  if(risk?.blocked(id))return deny(503,'provider-risk-blocked');
   if(Object.values(REGISTERED_AI_PROVIDERS).some(p=>env[p.key]&&command.messages.some(m=>m.content.includes(env[p.key]))))
    return deny(422,'secret-detected');
   if(!cfg.privatePrompts&&(codeRoles.has(command.role)||hasPersonalData(command.messages.map(m=>m.content))))
@@ -102,22 +103,26 @@ export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.n
       'NOT_FOUND','FAILED_PRECONDITION','UNAVAILABLE','INTERNAL'].includes(errorStatus))s.lastErrorStatus=errorStatus;
     }catch{/* Never expose arbitrary provider error bodies. */}
    }
-   if([401,402,403].includes(response.status)){s.stop=true;return deny(503,'provider-auth-or-budget-refused');}
-   if(response.status!==200){s.coolUntil=now+60000;return deny(503,'provider-unavailable');}
+   if([401,402,403].includes(response.status)){s.stop=true;risk?.observe(id,'auth-refused');return deny(503,'provider-auth-or-budget-refused');}
+   if(response.status!==200){s.coolUntil=now+60000;risk?.observe(id,'failure');return deny(503,'provider-unavailable');}
    const data=await readBoundedJson(response,FREE_AI_LIMITS.maxResponseBytes);
    if([data?.usage?.cost,data?.usage?.total_cost].some(v=>typeof v==='number'&&v>0)){
-    s.stop=true;return deny(503,'paid-usage-reported');
+    s.stop=true;risk?.observe(id,'paid-usage-reported');return deny(503,'paid-usage-reported');
    }
    const raw=id==='gemini'?(data?.candidates?.[0]?.content?.parts||[])
     .filter(p=>p?.thought!==true&&typeof p?.text==='string').map(p=>p.text).join('')
     :id==='cloudflare'?data?.result?.response:data?.choices?.[0]?.message?.content;
    if(typeof raw!=='string'||!raw.trim())return deny(503,'empty-answer');
    // Redact this provider's own key even when its format is not recognized.
-   const safe=redactSecrets(raw.split(env[spec.key]).join('[REDACTED]').slice(0,FREE_AI_LIMITS.maxAnswerChars));
+   const own=raw.split(env[spec.key]).join('[REDACTED]').slice(0,FREE_AI_LIMITS.maxAnswerChars);
+   const safe=risk?risk.screenAnswer(id,own):{ok:true,...redactSecrets(own)};
+   if(!safe.ok)return deny(503,'unsafe-answer');
+   risk?.success(id);
    return {status:200,result:{ok:true,provider:id,model:spec.model,text:safe.text,
     freeTierConfirmed:true,costVerified:false}};
   }catch(error){
    const code=failureCode(error);
+   risk?.observe(id,code);
    return deny(503,['timeout','aborted','network'].includes(code)?code:'provider-request-failed');
   }
   finally{s.active=false;}
