@@ -168,7 +168,7 @@ export function failureCode(error){
  if(name==='AbortError')return 'aborted';
  return 'network';
 }
-export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms))}={}){
+export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms)),risk=null}={}){
  const cfg=loadFreeAiConfig(env);
  const state=Object.fromEntries(Object.keys(FREE_AI_PROVIDERS).map(p=>[p,{minute:[],hour:[],day:'',dayCount:0,active:0,coolUntil:0,stoppedDay:''}]));
  const today=()=>new Date(clock()).toISOString().slice(0,10);
@@ -272,16 +272,22 @@ export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sle
   if(!order.length)return {status:400,result:{ok:false,error:'provider-not-allowed-for-role'}};
   const attempts=[];
   for(const p of order){
+   const danger=state[p].stoppedDay!==today()&&risk?.blocked(p);
+   if(danger){attempts.push({provider:p,skipped:'risk-blocked'});continue;}
    const refused=admit(p);
    if(refused){attempts.push({provider:p,skipped:refused});continue;}
    try{
     const answer=await call(p,command);
+    const screened=risk?risk.screenAnswer(p,answer.text):{ok:true,...redactSecrets(answer.text)};
+    if(!screened.ok){attempts.push({provider:p,failed:screened.reason});continue;}
+    risk?.success(p);
     attempts.push({provider:p,ok:true});
-    const safe=redactSecrets(answer.text);
-    return {status:200,result:{ok:true,provider:p,model:answer.model,text:safe.text,
-     ...(safe.redacted?{redactedSecrets:safe.redacted}:{}),attempts,paidCalls:0}};
+    return {status:200,result:{ok:true,provider:p,model:answer.model,text:screened.text,
+     ...(screened.redacted?{redactedSecrets:screened.redacted}:{}),attempts,paidCalls:0}};
    }catch(error){
-    attempts.push({provider:p,failed:failureCode(error)});
+    const code=failureCode(error);
+    risk?.observe(p,code);
+    attempts.push({provider:p,failed:code});
    }finally{state[p].active--;}
   }
   const limited=attempts.every(a=>a.skipped&&a.skipped!=='stopped-today');
