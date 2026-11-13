@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {request} from 'node:http';
 import {randomBytes} from 'node:crypto';
 import {createGatewayServer,validPracticeReceipt,PRACTICE_RECEIPT_SCHEMA} from '../server.mjs';
+import {CHANGE_SCHEMA,CHANGE_URL} from '../tenAppChangeContract.mjs';
 import {signHeaders} from '../auth.mjs';
 
 const NOW=Date.parse('2026-11-13T02:00:00.000Z'),PATH='/api/v1/practice/receive';
@@ -153,4 +154,12 @@ test('receipt claims a shared nonce across gateway instances without creating au
    assert.equal(commands.length,2);
   },options);
  },options);
+});
+
+test('receipt epoch is valid and stable per server, distinct across overlapping servers even when notifications are disabled',async()=>{
+ await withGateway(async first=>{const a=await call(first),b=await call(first);assert.match(a.data.bootEpoch,/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);assert.equal(a.data.bootEpoch,b.data.bootEpoch);await withGateway(async second=>{const c=await call(second);assert.notEqual(a.data.bootEpoch,c.data.bootEpoch);});});
+});
+test('startup callback event ID and post-ACK receipt share the same server epoch',async()=>{
+ const calls=[];const fetchImpl=async(url,init)=>{if(url===CHANGE_URL){const command=JSON.parse(init.body);calls.push(command);return Response.json({ok:true,schema:CHANGE_SCHEMA,eventId:command.eventId,accepted:true});}return Response.json(JSON.parse(init.body).map(([command])=>{assert.ok(['GET','SET'].includes(command));return {result:command==='GET'?null:'OK'};}));};
+ await withGateway(async origin=>{for(let n=0;n<100&&calls.length===0;n++)await new Promise(r=>setTimeout(r,5));assert.equal(calls.length,1);assert.equal(calls[0].kind,'gateway-started');const a=await call(origin),b=await call(origin);assert.equal(a.data.bootEpoch,calls[0].eventId);assert.equal(b.data.bootEpoch,calls[0].eventId);},{env:{...env,FIREWALL_STORE:'redis-rest',FIREWALL_STORE_REST_URL:'https://firewall-example.upstash.io',FIREWALL_STORE_REST_TOKEN:'a'.repeat(30),FIREWALL_FREE_AI_FEDERATION_KEY:fed.toString('base64url'),FIREWALL_TEN_APP_CHANGE_NOTIFY_ENABLED:'true'},fetchImpl});
 });

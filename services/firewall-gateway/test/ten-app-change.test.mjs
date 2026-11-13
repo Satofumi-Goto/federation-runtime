@@ -79,7 +79,7 @@ test('boot and audit slots drain fairly even when only the boot callback fails',
 test('stop/start rejects old boot ACK and old audit ACK while allowing the new generation to drain',async()=>{
  let release;const calls=[];const h=harness({pending:marker(1),fetchImpl:async(url,r)=>{const command=JSON.parse(r.body);calls.push(command);if(calls.length===1)await new Promise(resolve=>{release=resolve;});return Response.json({ok:true,schema:CHANGE_SCHEMA,eventId:command.eventId,accepted:true});}});
  h.notifier.start();await h.fire();h.notifier.stop();h.notifier.start();await h.fire();release();await flush();assert.equal(h.acks.length,0);assert.equal(h.pending,marker(1));assert.equal(h.timers.size,1);
- await h.fire();assert.equal(h.pending,null);assert.equal(h.acks.length,1);assert.notEqual(calls[0].eventId,calls[1].eventId);assert.equal(h.timers.size,0);h.notifier.stop();
+ await h.fire();assert.equal(h.pending,null);assert.equal(h.acks.length,1);assert.equal(calls[0].eventId,calls[1].eventId,'notifier pause does not change server lifetime epoch');assert.equal(h.timers.size,0);h.notifier.stop();
 });
 test('startup hint never overwrites a superseding audit marker and duplicate boot ACK is valid',async()=>{
  const h=harness({pending:marker(1),fetchImpl:async(url,r)=>{const command=JSON.parse(r.body);if(command.kind==='gateway-started')h.pending=marker(2);return Response.json({ok:true,schema:CHANGE_SCHEMA,eventId:command.eventId,accepted:false});}});
