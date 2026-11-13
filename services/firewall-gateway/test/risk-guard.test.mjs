@@ -72,3 +72,16 @@ test('収集：ドメインの保留・失効間近を危険候補にし、取�
  assert.deepEqual(out.entries.map(e=>[e.provider,e.reason]),[['llm7','domain-status-hold']]);
  assert.ok(out.checked.some(c=>c.checked===false));
 });
+
+test('日次収集の結果を遮断に入れ、無効化の設定で止まる',async()=>{
+ const {startDangerCollection}=await import('../server.mjs');
+ const r=createRiskGuard({env:{},clock:()=>NOW,dangerous:[]});
+ const logs=[];
+ const job=startDangerCollection(r,{}, {collectImpl:async()=>({entries:[{provider:'llm7',reason:'domain-status-hold',until:'2026-11-20T00:00:00.000Z'}],checked:[{provider:'llm7',checked:true}]}),
+  auditSink:l=>logs.push(JSON.parse(l)),firstDelayMs:1e9,intervalMs:1e9});
+ await job.run();job.stop();
+ assert.equal(r.blocked('llm7'),'listed:domain-status-hold');
+ assert.equal(r.info().collected.length,1);
+ assert.equal(logs[0].type,'firewall.danger-collect');assert.equal(logs[0].entries,1);
+ assert.equal(startDangerCollection(r,{FIREWALL_DANGER_COLLECT_ENABLED:'false'}).enabled,false);
+});

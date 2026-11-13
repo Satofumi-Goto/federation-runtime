@@ -578,7 +578,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  server.maxRequestsPerSocket=100;
  server.on('clientError',(_error,socket)=>{if(socket.writable)socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');});
  server.once('listening',()=>tenAppChanges.start());server.once('close',()=>tenAppChanges.stop());
- return {server,auth,access,egress,githubCanary,assistant,freeAi,registeredAi};
+ return {server,auth,access,egress,githubCanary,assistant,freeAi,registeredAi,risk};
 }
 // Owner-controlled, default-off, exactly one bounded public-text call per boot.
 // No endpoint, schedule, retry, prompt/answer log, or new caller authorization.
@@ -597,6 +597,27 @@ export async function probeRegisteredAiOnce(ai,env=process.env,auditSink=console
  try{auditSink(JSON.stringify(event));}catch{/* Diagnostics cannot fail startup. */}
  return event;
 }
+// 危ないAPIの情報収集を1日1回行い、結果を遮断の判定に入れる（登録不要・費用0の公開情報だけ）。
+// FIREWALL_DANGER_COLLECT_ENABLED=false で止める。記録は件数と接続先・理由の符号だけ。
+export function startDangerCollection(risk,env=process.env,{collectImpl,auditSink=console.info,intervalMs=86400000,firstDelayMs=60000}={}){
+ if(env.FIREWALL_DANGER_COLLECT_ENABLED==='false')return {stop(){},enabled:false};
+ let running=false;
+ const run=async()=>{
+  if(running)return;running=true;
+  try{
+   const collect=collectImpl||(await import('./tools/collect-dangerous-apis.mjs')).collect;
+   const result=await collect();
+   const n=risk.setCollected(result.entries);
+   auditSink(JSON.stringify({type:'firewall.danger-collect',ok:true,entries:n,
+    checked:result.checked.filter(c=>c.checked).length,unreachable:result.checked.filter(c=>!c.checked).length,
+    listed:result.entries.map(e=>e.provider+':'+e.reason).slice(0,50)}));
+  }catch{try{auditSink(JSON.stringify({type:'firewall.danger-collect',ok:false}));}catch{}}
+  finally{running=false;}
+ };
+ const first=setTimeout(run,firstDelayMs);first.unref?.();
+ const timer=setInterval(run,intervalMs);timer.unref?.();
+ return {enabled:true,run,stop(){clearTimeout(first);clearInterval(timer);}};
+}
 export function startServer(env=process.env){
  const port=Number(env.PORT||8789);
  if(!Number.isInteger(port)||port<1||port>65535)throw Error('invalid-port');
@@ -606,6 +627,7 @@ export function startServer(env=process.env){
   console.log(JSON.stringify({service:'federation-firewall-gateway',stage:'shadow-hold',port,
    canaryEgressEnabled:app.egress.liveEnabled,cutoverEnabled:false}));
   void probeRegisteredAiOnce(app.registeredAi,env);
+  startDangerCollection(app.risk,env);
  });
  return app;
 }
