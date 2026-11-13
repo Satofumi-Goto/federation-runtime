@@ -6,7 +6,7 @@ import {createGatewayServer} from '../server.mjs';
 import {signHeaders} from '../auth.mjs';
 import {FREE_AI_PATH} from '../freeAi.mjs';
 import {ASSISTANT_PATH} from '../assistant.mjs';
-import {findSecret,precheckSignedHeaders,SECRET_PATTERNS,hasPersonalData,redactSecrets} from '../hardening.mjs';
+import {findSecret,precheckSignedHeaders,SECRET_PATTERNS,hasPersonalData,redactSecrets,findPersonalData,configurePersonalTerms} from '../hardening.mjs';
 
 const NOW=Date.parse('2026-11-10T09:00:00.000Z');
 const key=randomBytes(32).toString('base64url');
@@ -24,6 +24,9 @@ const SAMPLES={
  'slack-token':'xo'+'xb-'+'1234567890-abc',
  'render-api-key':'rn'+'d_'+'e'.repeat(28),
  'jwt':'ey'+'J'+'f'.repeat(12)+'.ey'+'J'+'g'.repeat(12)+'.'+'h'.repeat(20),
+ 'groq-key':'gs'+'k_'+'A'.repeat(52),
+ 'nvidia-key':'nva'+'pi-'+'b'.repeat(64),
+ 'cerebras-key':'cs'+'k-'+'c'.repeat(48),
  'url-credentials':'redis'+'://default:'+'p'.repeat(12)+'@red-host:6379',
 };
 
@@ -187,4 +190,37 @@ test('a private key block is redacted entirely, body included',()=>{
  assert.equal(r.text,'前\n[REDACTED:private-key]\n後');
  const cut=redactSecrets('前 -----BEGIN '+'PRIVATE KEY-----\nMIIEvQIBADAN');
  assert.equal(cut.text,'前 [REDACTED:private-key]');
+});
+
+test('Groq・NVIDIA・Cerebras の鍵の形は応答からも伏せる', ()=>{
+ for(const id of ['groq-key','nvidia-key','cerebras-key'])
+  assert.ok(!redactSecrets('x '+SAMPLES[id]).text.includes(SAMPLES[id]),id);
+});
+
+test('ゲートウェイ自身の鍵の値は形式によらず匿名枠にも送らない', async ()=>{
+ const providerKey='Zz9'+'q'.repeat(29);
+ await withGateway({env:env({MISTRAL_API_KEY:providerKey})},async origin=>{
+  for(const leaked of [providerKey,key]){
+   const body=JSON.stringify({role:'summarize',messages:[{role:'user',content:'要約して '+leaked}]});
+   const r=await signedPost(origin,FREE_AI_PATH,body);
+   assert.equal(r.status,422);
+   assert.equal(r.data.error,'secret-detected');
+  }
+ });
+});
+
+test('住所・郵便番号・カード番号・マイナンバー・本人指定語を個人情報として扱う', ()=>{
+ assert.equal(findPersonalData(['東京都港区芝浦1丁目2-3に送る']),'address-jp');
+ assert.equal(findPersonalData(['〒105-0023']),'postal-jp');
+ assert.equal(findPersonalData(['番号 4111 1111 1111 1111']),'card-number');
+ // 公式の検査用番号の形（チェックデジット一致）
+ const base='12345678901';let sum=0;for(let n=1;n<=11;n++){const q=n<=6?n+1:n-5;sum+=Number(base[11-n])*q;}
+ const r=sum%11;assert.equal(findPersonalData(['個人番号 '+base+String(r<=1?0:11-r)]),'my-number');
+ for(const ok of ['東京都港区の需要予測','時刻 1762999999123','2026-11-13 の会議','価格 1,234,567円','const x = 123456789012;'])
+  assert.equal(findPersonalData([ok]),null,ok);
+ try{
+  assert.equal(configurePersonalTerms('山田太郎, x ,山田太郎'),1);
+  assert.equal(findPersonalData(['山田太郎さんの件']),'owner-term');
+  assert.equal(findPersonalData(['ふつうの要約']),null);
+ }finally{configurePersonalTerms('');}
 });

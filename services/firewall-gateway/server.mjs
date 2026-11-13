@@ -17,7 +17,7 @@ import {renderConsole} from './ui.mjs';
 import {independentApps,INDEPENDENT_ORIGINS,SERVING_HOSTS} from './origins.mjs';
 import {publicAcquisitionLedger} from './acquisitionLedger.mjs';
 import {storeFromEnv,createSharedGuards} from './store.mjs';
-import {precheckSignedHeaders,declaredTooLarge,findSecret,hasPersonalData} from './hardening.mjs';
+import {precheckSignedHeaders,declaredTooLarge,findSecret,hasPersonalData,gatewaySecretValues,containsSecretValue,configurePersonalTerms} from './hardening.mjs';
 
 const SECURITY_HEADERS=Object.freeze({
  'Cache-Control':'no-store',
@@ -138,6 +138,8 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
    FIREWALL_CLIENT_KEYS_JSON:tokyoKey?JSON.stringify({activity:tokyoKey}):''
  },clock});
  const access=createAccessVerifier({env,fetchImpl,clock});
+ const gatewaySecrets=gatewaySecretValues(env);
+ configurePersonalTerms(env.FIREWALL_PERSONAL_TERMS);
  const egress=createEgress({env,fetchImpl,clock});
  const activityAcquisition=createActivityAcquisition({fetchImpl,clock});
  const activitySourcesEnabled=env.FIREWALL_ACTIVITY_SOURCES_ENABLED==='true';
@@ -380,7 +382,8 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
     if(!parsed.ok)return reply(res,parsed.status,{ok:false,error:parsed.error});
     freeRole=parsed.command.role;
     // Prompts must not contain credentials, including for registered providers.
-    if(findSecret(parsed.command.messages.map(m=>m.content)))
+    const outbound=parsed.command.messages.map(m=>m.content);
+    if(findSecret(outbound)||containsSecretValue(outbound,gatewaySecrets))
      return reply(res,422,{ok:false,error:'secret-detected'});
     const result=await (registered?registeredAi:freeAi).chat(identity.client,parsed.command);
     freeProvider=result.result.provider||null;
