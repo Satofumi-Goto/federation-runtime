@@ -68,7 +68,7 @@ test('収集：ドメインの保留・失効間近を危険候補にし、取�
  const fetchImpl=async url=>String(url).includes('llm7.io')
   ?new Response(JSON.stringify({status:['active','pending delete']}),{status:200})
   :new Response('',{status:503});
- const out=await collect({fetchImpl,now:NOW});
+ const out=await collect({fetchImpl,now:NOW,sleep:async()=>{}});
  assert.deepEqual(out.entries.map(e=>[e.provider,e.reason]),[['llm7','domain-status-hold']]);
  assert.ok(out.checked.some(c=>c.checked===false));
 });
@@ -84,4 +84,13 @@ test('日次収集の結果を遮断に入れ、無効化の設定で止まる',
  assert.equal(r.info().collected.length,1);
  assert.equal(logs[0].type,'firewall.danger-collect');assert.equal(logs[0].entries,1);
  assert.equal(startDangerCollection(r,{FIREWALL_DANGER_COLLECT_ENABLED:'false'}).enabled,false);
+});
+
+test('収集：断られた（429）時は1回だけ待って再試行し、間を空けて問い合わせる',async()=>{
+ const waits=[];let calls=0;
+ const fetchImpl=async url=>{calls++;return calls===1?new Response('',{status:429}):new Response(JSON.stringify({status:['active']}),{status:200});};
+ const out=await collect({fetchImpl,now:NOW,sleep:async ms=>{waits.push(ms);},pauseMs:10});
+ assert.ok(out.checked[0].checked);
+ assert.equal(waits[0],40);
+ assert.ok(waits.filter(w=>w===10).length>=1);
 });

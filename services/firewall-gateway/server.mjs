@@ -610,6 +610,7 @@ export function startDangerCollection(risk,env=process.env,{collectImpl,auditSin
    const n=risk.setCollected(result.entries);
    auditSink(JSON.stringify({type:'firewall.danger-collect',ok:true,entries:n,
     checked:result.checked.filter(c=>c.checked).length,unreachable:result.checked.filter(c=>!c.checked).length,
+    unreachableStatus:[...new Set(result.checked.filter(c=>!c.checked).map(c=>String(c.status??'unknown').slice(0,12)))].slice(0,10),
     listed:result.entries.map(e=>e.provider+':'+e.reason).slice(0,50)}));
   }catch{try{auditSink(JSON.stringify({type:'firewall.danger-collect',ok:false}));}catch{}}
   finally{running=false;}
