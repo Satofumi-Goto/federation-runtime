@@ -41,11 +41,19 @@ export function loadDangerousApis(file=fileURLToPath(new URL('./dangerous-apis.j
 export function createRiskGuard({env=process.env,clock=Date.now,dangerous=loadDangerousApis()}={}){
  const manual=new Set(String(env.FIREWALL_BLOCKED_PROVIDERS||'').split(',').map(s=>s.trim()).filter(s=>ID.test(s)));
  const state=new Map();
+ let collected=[],collectedAt=null;
+ // 日次収集（tools/collect-dangerous-apis.mjs の collect）の結果。期限付きで、次の収集で置き換える。
+ function setCollected(entries,at=clock()){
+  collected=(Array.isArray(entries)?entries:[]).filter(e=>e&&ID.test(e.provider)&&/^[a-z0-9-]{3,48}$/.test(e.reason)
+   &&(e.until===undefined||!Number.isNaN(Date.parse(e.until)))).slice(0,200);
+  collectedAt=new Date(at).toISOString();
+  return collected.length;
+ }
  const get=p=>{if(!state.has(p))state.set(p,{events:[],blockedUntil:0,reason:null,blocks:0});return state.get(p);};
  function blocked(p){
   if(manual.has(p))return 'manual-block';
   const t=clock();
-  const listed=dangerous.find(e=>e.provider===p&&(!e.until||Date.parse(e.until)>t));
+  const listed=[...dangerous,...collected].find(e=>e.provider===p&&(!e.until||Date.parse(e.until)>t));
   if(listed)return 'listed:'+listed.reason;
   const s=state.get(p);
   return s&&s.blockedUntil>t?'auto:'+s.reason:null;
@@ -75,7 +83,9 @@ export function createRiskGuard({env=process.env,clock=Date.now,dangerous=loadDa
   const t=clock();
   return {threshold:RISK_THRESHOLD,manualBlocks:[...manual].sort(),listed:dangerous.filter(e=>!e.until||Date.parse(e.until)>t)
    .map(e=>({provider:e.provider,reason:e.reason,until:e.until||null})),
+   collected:collected.filter(e=>!e.until||Date.parse(e.until)>t).map(e=>({provider:e.provider,reason:e.reason,until:e.until||null})),
+   collectedAt,
    autoBlocks:[...state].filter(([,s])=>s.blockedUntil>t).map(([p,s])=>({provider:p,reason:s.reason,until:new Date(s.blockedUntil).toISOString()}))};
  }
- return {blocked,observe,success,screenAnswer,info};
+ return {blocked,observe,success,screenAnswer,info,setCollected};
 }
