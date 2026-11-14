@@ -212,3 +212,26 @@ test('選び直しは価格の全ての欄が0のものだけ。選び直した�
  const info=ai.info().providers.find(p=>p.id==='openrouter');
  assert.equal(info.privatePrompts,false);assert.equal(info.codeRolesAllowed,false);
 });
+
+test('選び直したモデルも404なら、それを外して30分後に別の無料モデルを選ぶ（同じモデルに戻らない）',async()=>{
+ const {OPENROUTER_MODELS_URL}=await import('../registeredAi.mjs');
+ const list=[{id:'google/gemma-a:free',pricing:{prompt:'0',completion:'0'},context_length:9000},
+  {id:'qwen/qwen-b:free',pricing:{prompt:'0',completion:'0'},context_length:8000}];
+ let now=Date.parse('2026-11-14T00:00:00Z');let listCalls=0;
+ const ai=createRegisteredAi({env:setup('openrouter'),clock:()=>now,fetchImpl:async(url,init)=>{
+  if(url===OPENROUTER_MODELS_URL){listCalls++;return Response.json({data:list});}
+  return JSON.parse(init.body).model==='qwen/qwen-b:free'?response('OK'):new Response('{}',{status:404,headers:{'content-type':'application/json'}});
+ }});
+ assert.equal((await ai.chat('federation',command('openrouter'))).result.error,'provider-model-reselected');
+ assert.equal(ai.info().providers.find(p=>p.id==='openrouter').model,'google/gemma-a:free');
+ now+=61000;
+ await ai.chat('federation',command('openrouter'));
+ assert.equal(listCalls,1,'選び直しは30分あける');
+ now+=31*60000;
+ assert.equal((await ai.chat('federation',command('openrouter'))).result.error,'provider-model-reselected');
+ assert.equal(listCalls,2);
+ assert.equal(ai.info().providers.find(p=>p.id==='openrouter').model,'qwen/qwen-b:free');
+ now+=61000;
+ const ok=await ai.chat('federation',command('openrouter'));
+ assert.equal(ok.result.ok,true);assert.equal(ok.result.model,'qwen/qwen-b:free');
+});
