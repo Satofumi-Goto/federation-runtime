@@ -20,6 +20,10 @@ const WINDOW_MS=3600000,BLOCK_MS=6*3600000,PAID_BLOCK_MS=24*3600000;
 // 遮断も短く（30分）して、正常な情報源を長く止めない。
 export const SOURCE_BLOCK_MS=30*60000;
 const AVAILABILITY=new Set(['failure']);
+// 混み合い・相手側の障害（429・5xx）は、どの接続先でも危険の印ではない。各経路の60秒の cooldown で避ける。
+// これで6時間止めると、正常な無料枠（例：blockrun の 429）が長く使えなくなる。
+// 時間切れ・通信失敗（timeout・aborted・network）は cooldown が無く、形式違いも network に入りうるので、従来どおり数える。
+const isAvailability=code=>/^upstream-(?:429|5\d\d)$/.test(String(code));
 const ALWAYS_SCORED=new Set(['paid-usage-reported','unsafe-answer','secret-in-answer']);
 // 応答本文に現れた時、利用側のAIや画面を乗っ取る恐れが高いもの。
 export const UNSAFE_ANSWER_PATTERNS=Object.freeze([
@@ -84,7 +88,7 @@ export function createRiskGuard({env=process.env,clock=Date.now,dangerous=loadDa
   // 解除の対象でも、課金表示・危険な応答・応答内の秘密は止める（解除は誤検知しやすい異常だけを外す）。
   if(unblock.has(p)&&!ALWAYS_SCORED.has(code))return {blocked:false,score:0,unblocked:true};
   const source=p.startsWith('host:');
-  if(source&&AVAILABILITY.has(code))return {blocked:false,score:0};
+  if(source&&AVAILABILITY.has(code)||isAvailability(code))return {blocked:false,score:0};
   const weight=RISK_WEIGHTS[code]??(String(code).startsWith('upstream-40')?RISK_WEIGHTS['auth-refused']:RISK_WEIGHTS.failure);
   const s=get(p),t=clock();
   s.events=s.events.filter(e=>t-e.at<WINDOW_MS);
@@ -127,7 +131,7 @@ export function createRiskGuard({env=process.env,clock=Date.now,dangerous=loadDa
  function restore(records){
   const t=clock();let n=0;
   for(const r of Array.isArray(records)?records:[]){
-   if(!r||typeof r.key!=='string'||!KEY(r.key)||unblock.has(r.key)||!/^[a-z0-9-]{3,48}$/.test(String(r.reason))||Number.isNaN(Date.parse(r.until)))continue;
+   if(!r||typeof r.key!=='string'||!KEY(r.key)||unblock.has(r.key)||isAvailability(r.reason)||!/^[a-z0-9-]{3,48}$/.test(String(r.reason))||Number.isNaN(Date.parse(r.until)))continue;
    const until=Date.parse(r.until);if(until<=t)continue;
    const s=get(r.key);if(s.blockedUntil<until){s.blockedUntil=Math.min(until,t+PAID_BLOCK_MS);s.reason=r.reason;n++;}
   }
