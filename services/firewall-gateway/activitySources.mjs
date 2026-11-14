@@ -114,7 +114,7 @@ export function validateEventQuery(input,now=Date.now()){
   if(from<earliest||to>latest||to<from||(Date.parse(to)-Date.parse(from))/86400000>45)return null;
   return {from,to,page};
 }
-export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
+export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now,risk=null}={}){
   const cache=new Map(),pending=new Map(),cooldowns=new Map();
   let gdeltThrottleStreak=0;
   async function read(url,signal,{html=false,bytes=false,anilist=false,tokyo=false,maxBytes=MAX_BYTES}={}){
@@ -134,10 +134,13 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
            /^\d{4}-\d{2}-\d{2}$/.test(u.searchParams.get('from')||'')&&
            /^\d{4}-\d{2}-\d{2}$/.test(u.searchParams.get('to')||'')
          ))throw Error('upstream-not-allowed');
+    if(risk?.blockedSource(u.hostname))throw Error('source-risk-blocked');
     const response=await fetchImpl(u.href,{method:anilist||tokyo?'POST':'GET',redirect:'manual',credentials:'omit',
       headers:{Accept:html?'text/html':RSS_NEWS_IDS.has(Object.keys(NEWS).find(id=>NEWS[id]===u.href))?'application/rss+xml, application/xml, text/xml':'application/json',...((anilist||tokyo)?{'Content-Type':'application/json'}:{})},
       ...(anilist?{body:ANILIST_BODY}:tokyo?{body:'{}'}:{}),signal});
     if(!response.ok||response.status>=300&&response.status<400){
+      risk?.observeSource(u.hostname,response.status>=300&&response.status<400?'redirect-refused':
+        response.status===401||response.status===403?'auth-refused':'failure');
       const error=new Error('upstream-unavailable');
       if((anilist||u.href===NEWS.gdelt)&&response.status===429){
         if(u.href===NEWS.gdelt)error.message='gdelt-throttled';
@@ -150,7 +153,7 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
     const declared=Number(response.headers?.get?.('content-length'));
     if(Number.isFinite(declared)&&declared>maxBytes)throw Error('upstream-too-large');
     const buf=await response.arrayBuffer();
-    if(buf.byteLength>maxBytes)throw Error('upstream-too-large');
+    if(buf.byteLength>maxBytes){risk?.observeSource(u.hostname,'response-too-large');throw Error('upstream-too-large');}
     if(u.href===NEWS.gdelt){
       // GDELT can return a throttle/usage notice as HTTP 200 text.
       // Reject and back off rather than caching malformed headlines.
@@ -174,11 +177,14 @@ export function createActivityAcquisition({fetchImpl=fetch,clock=Date.now}={}){
       if(raw?.errors?.length||!Array.isArray(raw?.data?.Page?.media)||raw.data.Page.media.length>6)
         throw Error('invalid-anilist-payload');
     }
-    if(bytes)return {encoding:'base64url',body:Buffer.from(buf).toString('base64url')};
+    if(bytes){risk?.successSource(u.hostname);return {encoding:'base64url',body:Buffer.from(buf).toString('base64url')};}
     const text=new TextDecoder('utf-8',{fatal:true}).decode(buf);
-    if(html)return text;
-    const data=JSON.parse(text);
-    if(!data||typeof data!=='object')throw Error('bad-provider-json');
+    if(html){risk?.successSource(u.hostname);return text;}
+    // 壊れたJSON・形の違う応答は、危険の兆候として点数にする（空き状況の揺れとは分ける）。
+    let data;
+    try{data=JSON.parse(text);}catch{risk?.observeSource(u.hostname,'invalid-json-shape');throw Error('bad-provider-json');}
+    if(!data||typeof data!=='object'){risk?.observeSource(u.hostname,'invalid-json-shape');throw Error('bad-provider-json');}
+    risk?.successSource(u.hostname);
     return data;
   }
   async function tv(signal){

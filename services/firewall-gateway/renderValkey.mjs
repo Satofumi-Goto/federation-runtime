@@ -134,6 +134,21 @@ export function createRenderValkeyStore({url,timeoutMs=1600,transport=net.create
   },
   async readPendingChange(){const reply=await run([['GET',prefix+'ten-app-change']]);return reply&&(reply[0]===null||typeof reply[0]==='string')?{ok:true,marker:reply[0]}:{ok:false,reason:'store-unavailable'};},
   async ackPendingChange(marker){if(typeof marker!=='string'||marker.length>300)return {ok:false,reason:'marker-invalid'};const script="if redis.call('GET',KEYS[1])==ARGV[1] then return redis.call('DEL',KEYS[1]) else return 0 end";const reply=await run([['EVAL',script,'1',prefix+'ten-app-change',marker]]);return reply&&[0,1].includes(reply[0])?{ok:true,cleared:reply[0]===1}:{ok:false,reason:'store-unavailable'};},
+  // 危ないAPIの自動遮断の一覧（riskGuard）。監査記録とは分け、期限付きの1つのキーに丸ごと置く。
+  // 監査記録は署名付き要求のたびに増えて押し流されるので、そちらからは戻さない。
+  async saveRiskBlocks(records,ttlMs){
+   const value=JSON.stringify(Array.isArray(records)?records.slice(0,200):[]);
+   if(value.length>32768)return {ok:false,reason:'risk-blocks-too-large'};
+   const ttl=Math.min(86400000,Math.max(1000,Math.ceil(Number(ttlMs)||0)));
+   const replies=await run([value==='[]'?['DEL',prefix+'risk-blocks']:['SET',prefix+'risk-blocks',value,'PX',String(ttl)]]);
+   return replies&&(replies[0]==='OK'||Number.isSafeInteger(replies[0]))?{ok:true}:{ok:false,reason:'store-unavailable'};
+  },
+  async readRiskBlocks(){
+   const replies=await run([['GET',prefix+'risk-blocks']],{maxReply:33000});
+   if(!replies||!(replies[0]===null||typeof replies[0]==='string'))return {ok:false,reason:'store-unavailable'};
+   try{const rows=replies[0]===null?[]:JSON.parse(replies[0]);return {ok:true,records:Array.isArray(rows)?rows:[]};}
+   catch{return {ok:true,records:[]};}
+  },
   async readAudit(limit){
    // Each record is at most 2048 bytes; the reply bound follows the requested count.
    const replies=await run([['LRANGE',prefix+'audit','0',String(limit-1)]],{maxReply:limit*2100+64});

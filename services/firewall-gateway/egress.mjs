@@ -26,7 +26,7 @@ export async function readBoundedJson(response,maxBytes){
  if(data===null||typeof data!=='object')throw Error('invalid-json-shape');
  return data;
 }
-export function createEgress({env=process.env,fetchImpl=fetch,clock=Date.now}={}){
+export function createEgress({env=process.env,fetchImpl=fetch,clock=Date.now,risk=null}={}){
  const started=new Map(),cache=new Map(),failures=new Map(),pending=new Map();
  let active=0,totalStarted=0,windowStart=clock();
  // This requires an explicit route and a short, non-renewing expiration.
@@ -61,6 +61,8 @@ export function createEgress({env=process.env,fetchImpl=fetch,clock=Date.now}={}
   if(url.protocol!=='https:'||url.username||url.password||!allowHost.has(url.hostname)
      ||url.port&&url.port!=='443')
    return {status:503,result:{ok:false,reason:'upstream-policy-invalid'}};
+  if(risk?.blockedSource(url.hostname))
+   return {status:503,result:{ok:false,reason:'source-risk-blocked'}};
   const now=clock(),hit=cache.get(routeId);
   if(hit&&now-hit.at<route.ttlMs)
    return {status:200,result:{...hit.result,cached:true}};
@@ -94,8 +96,10 @@ export function createEgress({env=process.env,fetchImpl=fetch,clock=Date.now}={}
     cache.set(routeId,{at:clock(),result});
     if(cache.size>20)cache.delete(cache.keys().next().value);
     failures.delete(routeId);
+    risk?.successSource(url.hostname);
     return {status:200,result};
-   }catch{
+   }catch(error){
+    risk?.observeSource(url.hostname,['redirect-refused','response-too-large','invalid-content-type'].includes(error?.message)?error.message:'failure');
     failures.set(routeId,clock()+60000);
     if(failures.size>20)failures.delete(failures.keys().next().value);
     return {status:502,result:{ok:false,reason:'provider-unavailable',retryAfterSeconds:60}};

@@ -169,3 +169,46 @@ test('NVIDIA pins the current NVIDIA-hosted model and bounds output',async()=>{
  assert.equal(sent.max_tokens,256);
  assert.equal(result.result.model,sent.model);
 });
+
+test('OpenRouter の固定モデルが404になったら、公開一覧から「:free で価格0」のモデルを選び直す（6時間に1回、鍵は送らない）',async()=>{
+ const {pickOpenRouterFreeModel,OPENROUTER_MODELS_URL}=await import('../registeredAi.mjs');
+ const list=[{id:'paid/model',pricing:{prompt:'0.000001',completion:'0'}},
+  {id:'liquid/x:free',pricing:{prompt:'0',completion:'0'},context_length:4096},
+  {id:'meta-llama/llama-z:free',pricing:{prompt:'0',completion:'0'},context_length:131072},
+  {id:'meta-llama/llama-y:free',pricing:{prompt:'0',completion:'0.1'},context_length:999999}];
+ assert.equal(pickOpenRouterFreeModel(list),'meta-llama/llama-z:free');
+ assert.equal(pickOpenRouterFreeModel([{id:'a/b',pricing:{prompt:'0',completion:'0'}}]),null);
+ let now=Date.parse('2026-11-14T00:00:00Z');const seen=[];
+ const ai=createRegisteredAi({env:setup('openrouter'),clock:()=>now,fetchImpl:async(url,init)=>{
+  if(url===OPENROUTER_MODELS_URL){seen.push({url,auth:init.headers.Authorization});return Response.json({data:list});}
+  const body=JSON.parse(init.body);seen.push({url,model:body.model});
+  return body.model==='meta-llama/llama-z:free'?response('OK'):new Response('{}',{status:404,headers:{'content-type':'application/json'}});
+ }});
+ assert.equal((await ai.chat('federation',command('openrouter'))).result.error,'provider-model-reselected');
+ assert.equal(seen[1].url,OPENROUTER_MODELS_URL);assert.equal(seen[1].auth,undefined);
+ now+=61000;
+ const ok=await ai.chat('federation',command('openrouter'));
+ assert.equal(ok.result.ok,true);assert.equal(ok.result.model,'meta-llama/llama-z:free');
+ assert.equal(ai.info().providers.find(p=>p.id==='openrouter').model,'meta-llama/llama-z:free');
+});
+
+test('選び直しは価格の全ての欄が0のものだけ。選び直したモデルには私的な処理の確認を引き継がない。一覧の失敗は30分でやり直す',async()=>{
+ const {pickOpenRouterFreeModel,OPENROUTER_MODELS_URL}=await import('../registeredAi.mjs');
+ assert.equal(pickOpenRouterFreeModel([{id:'x/y:free',pricing:{prompt:'0',completion:'0',request:'0.01'}}]),null);
+ assert.equal(pickOpenRouterFreeModel([{id:'x/y:free',pricing:{prompt:'0',completion:'0',image:'0'}}]),'x/y:free');
+ let now=Date.parse('2026-11-14T00:00:00Z');let listCalls=0,listOk=false;
+ const env={...setup('openrouter'),FIREWALL_REGISTERED_AI_OPENROUTER_PRIVATE_PROCESSING_CONFIRMED:'true'};
+ const ai=createRegisteredAi({env,clock:()=>now,fetchImpl:async(url,init)=>{
+  if(url===OPENROUTER_MODELS_URL){listCalls++;if(!listOk)throw Error('timeout');
+   return Response.json({data:[{id:'meta-llama/z:free',pricing:{prompt:'0',completion:'0'}}]});}
+  return JSON.parse(init.body).model==='meta-llama/z:free'?response('OK'):new Response('{}',{status:404,headers:{'content-type':'application/json'}});
+ }});
+ assert.equal(ai.info().providers.find(p=>p.id==='openrouter').privatePrompts,true);
+ await ai.chat('federation',command('openrouter'));
+ assert.equal(listCalls,1);
+ now+=31*60000;listOk=true;
+ assert.equal((await ai.chat('federation',command('openrouter'))).result.error,'provider-model-reselected');
+ assert.equal(listCalls,2);
+ const info=ai.info().providers.find(p=>p.id==='openrouter');
+ assert.equal(info.privatePrompts,false);assert.equal(info.codeRolesAllowed,false);
+});
