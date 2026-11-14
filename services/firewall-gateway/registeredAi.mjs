@@ -45,11 +45,13 @@ function configFor(id,env){
  return {enabled:!reason,reason:reason||'armed',privatePrompts};
 }
 // OpenRouter の無料モデルは入れ替わりが激しく、固定のモデルが消えると 404 が続く（11-14 に発生）。
-// 404 の時だけ公開のモデル一覧から「:free で価格0」のモデルを選び直す。6時間に1回まで、鍵は送らない。
+// 404 の時だけ公開のモデル一覧から「:free で価格0」のモデルを選び直す。成功後は6時間・選んだモデルも404なら30分あける。
+// 404 を返したモデルはその日は選ばない。鍵は送らない。
 export const OPENROUTER_MODELS_URL='https://openrouter.ai/api/v1/models';
 const OPENROUTER_PREFERRED=[/^meta-llama\//,/^google\/gemma/,/^mistralai\//,/^qwen\//,/^deepseek\//];
-export function pickOpenRouterFreeModel(list){
+export function pickOpenRouterFreeModel(list,rejected=new Set()){
  const free=(Array.isArray(list)?list:[]).filter(m=>typeof m?.id==='string'&&/^[a-z0-9._\/-]{3,120}:free$/i.test(m.id)
+  &&!rejected.has(m.id)
   // 価格の欄（prompt・completion・request・image・web_search など）が全て0のものだけ。
   &&m.pricing&&typeof m.pricing==='object'&&Object.keys(m.pricing).length>=2
   &&Object.values(m.pricing).every(v=>String(v)==='0'));
@@ -58,10 +60,17 @@ export function pickOpenRouterFreeModel(list){
 }
 export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.now,risk=null}={}){
  const chosen={};let modelsCheckedAt=-Infinity,modelsRetryMs=6*3600000;
+ // 404 を返したモデル（固定モデル・選び直したモデル）は、その日のうちは選ばない（同じモデルに戻って止まらない）。
+ const rejected=new Set();let rejectedDay='';
  const modelFor=id=>chosen[id]||REGISTERED_AI_PROVIDERS[id].model;
  // 私的な処理の確認（_PRIVATE_PROCESSING_CONFIRMED）は固定モデルについてのもの。選び直したモデルには引き継がない。
  const privateFor=id=>configs[id].privatePrompts&&!chosen[id];
  async function reselectOpenRouter(){
+  const today=new Date(clock()).toISOString().slice(0,10);
+  if(rejectedDay!==today){rejected.clear();rejectedDay=today;}
+  // 今使っているモデルが 404 なら、それを外す。選び直したモデルが 404 の時は30分後に選び直せる。
+  const current=modelFor('openrouter');
+  if(!rejected.has(current)){rejected.add(current);if(chosen.openrouter)modelsRetryMs=Math.min(modelsRetryMs,30*60000);}
   if(clock()-modelsCheckedAt<modelsRetryMs)return false;
   // 取得できなかった時は30分後にやり直す。取得できた時は6時間あける。
   modelsCheckedAt=clock();modelsRetryMs=30*60000;
@@ -70,8 +79,9 @@ export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.n
     headers:{Accept:'application/json'},signal:AbortSignal.timeout(FREE_AI_LIMITS.timeoutMs)});
    if(response.status!==200)return false;
    const data=await readBoundedJson(response,4*1024*1024);
-   const next=pickOpenRouterFreeModel(data?.data);
-   modelsRetryMs=6*3600000;
+   const next=pickOpenRouterFreeModel(data?.data,rejected);
+   // 選べる無料モデルが無い（全て404で外した）時は、30分後にもう一度見る。
+   modelsRetryMs=next?6*3600000:30*60000;
    if(next&&next!==modelFor('openrouter')){chosen.openrouter=next;return true;}
   }catch{/* keep the current model; try again after the interval */}
   return false;
