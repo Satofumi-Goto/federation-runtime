@@ -93,7 +93,7 @@ Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更し
 
 ## 10アプリの独立Originと接続状態（2026-11-06）
 
-- 独立Origin：`origins.mjs` の `INDEPENDENT_ORIGINS`（各アプリの `/_status/parent` の origin、ソース固定値）。Gateway `https://federation-firewall-gateway.onrender.com`、Seneschal `https://seneschal-runtime.com`、他8件 `https://<id>-standalone-staging.onrender.com`（activity・fleet・urban・service・federation・simulator・remote-monitoring・administration）。`servingHost`：Seneschal `https://seneschal-standalone-staging.onrender.com`、他は origin と同じ。`plannedCustomOrigin`：Federation `https://federation-runtime.com`。全件 `dnsVerified:false`。
+- 独立Origin：`origins.mjs` の `INDEPENDENT_ORIGINS`（各アプリの `/_status/parent` の origin、ソース固定値）。Gateway `https://federation-firewall-gateway.onrender.com`、Seneschal `https://seneschal-runtime.com`、他8件 `https://federation-standalone-staging.onrender.com`（federation と、その配下に同梱した activity・fleet・urban・service・simulator・remote-monitoring・administration）。`servingHost`：Seneschal `https://seneschal-standalone-staging.onrender.com`、同梱の7件は `https://federation-standalone-staging.onrender.com/<id>`、federation は origin と同じ。`plannedCustomOrigin`：Federation `https://federation-runtime.com`。全件 `dnsVerified:false`。
 - `/healthz`・`/api/status`・`/api/catalog` の `independentApps`：10アプリのOriginと接続状態（`origin-unassigned`／`not-connected`／`key-configured-no-signed-request`／`signed-request-verified-this-process`／`self`）。`productionE2EVerified` は常に `false`。
 
 ## 独立オリジンの状態エンドポイント（2026-11-06）
@@ -124,6 +124,23 @@ Federation本体のVite/SDK/認証/ルーティングやBase44公開は変更し
 ## Keyless free AI relay (default OFF)
 
 - `POST /api/v1/free-ai/chat` relays OpenAI-style chat to providers that need **no account or API key**: OVHcloud AI Endpoints (anonymous), LLM7.io (anonymous) and Kilo AI Gateway (`:free` models only). No credential is stored or forwarded.
-- HMAC server-to-server only (`federation` client by default, `FIREWALL_FREE_AI_CLIENT_IDS`), Origin/Cookie/Authorization rejected. `FIREWALL_FREE_AI_FEDERATION_KEY` is a dedicated federation key valid for this route and the read-only `/api/v1/audit/export` only (no change to `FIREWALL_CLIENT_KEYS_JSON`). OFF unless `FIREWALL_FREE_AI_ENABLED=true`.
+- HMAC server-to-server only (`federation` client by default, `FIREWALL_FREE_AI_CLIENT_IDS`), Origin/Cookie/Authorization rejected. `FIREWALL_FREE_AI_FEDERATION_KEY` is a dedicated federation key valid for this route, the read-only `/api/v1/audit/export`, the fixed `/api/v1/engineering/run` operations and the fixed `/api/v1/card-tools/fetch` (no change to `FIREWALL_CLIENT_KEYS_JSON`). OFF unless `FIREWALL_FREE_AI_ENABLED=true`.
 - Per-provider ceilings at or below the anonymous limits; 429/5xx cool down 60 s, 401/402/403 or any reported cost stop that provider for the day. LLM7 and Kilo may log prompts, so `plan`/`implement`/`review`/`test` roles are refused for them.
 - `GET /api/free-ai` and `/api/clients` (`freeAi`) publish the provider list, limits and today's counts. Prompts and answers are never logged.
+
+## 無料CAD・解析APIとWorkの接続（2026-11-14）
+
+`GET /api/engineering` が既存無料OSSの13操作と一次資料・仮入力例を返す。
+`POST /api/v1/engineering/run` はfederationの既存専用HMAC鍵で認証し、固定された共有APIの内部実行口へ再署名して送る。既存API側 `FIREWALL_FEDERATION_HMAC_KEY` とGateway側 `FIREWALL_FREE_AI_FEDERATION_KEY` の組を優先し、主鍵とは混同しない。専用鍵は従来の無料AI・監査に加え、この固定13操作だけにも有効となる。専用鍵が無い構成に限り主クライアント鍵を使う。
+Workは既存Federation MCPの `engineering.catalog` / `engineering.run` を使う。通常ブラウザーのCookieやユーザーPCのlocalhostをGatewayへ転送しない。任意コード・任意宛先は許可しない。実エンジンと既存PostgreSQLは共有API側にあり、GatewayにPythonを追加インストールしない。経路・呼出例・試験の限界は正本 `docs/engineering/gateway-work-engineering-20261114.md` を参照。
+
+## カードの道具の外部取得（2026-11-14、標準OFF）
+
+- `POST /api/v1/card-tools/fetch`：Federation のカード詳細の道具（シミュレーション・CAD・BI）が使う外部の計算・データ。依頼元は `federation` だけ（無料AIと同じ `FIREWALL_FREE_AI_FEDERATION_KEY` または主鍵で HMAC 署名）。Origin・Cookie・Authorization 付きは403。
+- 本文は `{"tool":"<ID>","params":{...}}` だけ（1KB以内）。道具は固定の2件：
+  - `osrm-table`：`{from:[緯度,経度], to:[[緯度,経度], …最大10]}` → `https://router.project-osrm.org/table/v1/driving/…`。返すのは所要時間（秒）・距離（m）の数値だけ（自由流）。
+  - `open-meteo-hourly`：`{at:[緯度,経度], days:1〜7}` → `https://api.open-meteo.com/v1/forecast?…`。返すのは時刻・気温・降水量・風速・日射の数値だけ。
+- 座標は日本を含む矩形（北緯20〜46度・東経122〜154度。周辺国の一部も含む）だけ。範囲外・文字列・余分なキーは400。上流の URL は固定のテンプレートで、利用者は URL・ヘッダー・認証情報を指定できない。
+- `FIREWALL_CARD_TOOLS_ENABLED=true` の時だけ外部へ接続する（未設定は503 `card-tools-disabled`）。上限は同時2・20件/分・12件/依頼元/分、4.5秒で打ち切り、応答256KB以内、転送（3xx）拒否、同じ依頼は10分キャッシュ。
+- 監査は時刻・状態・依頼元・道具の名前だけ。座標・応答は記録しない。`GET /api/card-tools` で方針と有効かどうかを返す。
+- 共通バックエンド側は `runtime/independent/card-tools-gateway.mjs`（関数名 `cardToolsGateway`、管理者だけ、5分30回まで）が `FIREWALL_FEDERATION_HMAC_KEY` で署名して `FEDERATION_FIREWALL_GATEWAY_INTERNAL_URL` へ送る。

@@ -12,11 +12,13 @@ import {createActivityAcquisition,validateEventQuery,NEWS_SOURCE_IDS,TOKYO_EVENT
 import {createGithubCanaryVerifier} from './githubCanary.mjs';
 import {createAssistant,parseAssistantCommand,ASSISTANT_PATH,ASSISTANT_MAX_BODY,ASSISTANT_POLICY} from './assistant.mjs';
 import {createFreeAi,parseFreeAiCommand,FREE_AI_PATH,FREE_AI_MAX_BODY,FREE_AI_POLICY} from './freeAi.mjs';
+import {createCardTools,parseCardToolCommand,CARD_TOOLS_PATH,CARD_TOOLS_MAX_BODY,CARD_TOOLS_POLICY} from './cardTools.mjs';
 import {createRegisteredAi,registeredProvider,parseRegisteredAiCommand,REGISTERED_AI_PROVIDERS} from './registeredAi.mjs';
 import {publicCatalog,publicClients,SIGNING_CONTRACT} from './policy.mjs';
 import {renderConsole} from './ui.mjs';
 import {independentApps,INDEPENDENT_ORIGINS,SERVING_HOSTS} from './origins.mjs';
 import {publicAcquisitionLedger} from './acquisitionLedger.mjs';
+import {ENGINEERING_PATH,ENGINEERING_MAX_BODY,parseEngineeringCommand,publicEngineeringCatalog,createEngineeringRelay} from './engineering.mjs';
 import {storeFromEnv,createSharedGuards} from './store.mjs';
 import {precheckSignedHeaders,declaredTooLarge,findSecret,hasPersonalData,gatewaySecretValues,containsSecretValue,configurePersonalTerms} from './hardening.mjs';
 
@@ -175,14 +177,21 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  const assistant=createAssistant({env,fetchImpl,clock});
  const risk=createRiskGuard({env,clock});
  const freeAi=createFreeAi({env,fetchImpl,clock,risk});
+ const cardTools=createCardTools({env,fetchImpl,clock});
  const registeredAi=createRegisteredAi({env,fetchImpl,clock,risk});
  // Dedicated free-AI credential for the federation client only. It authorizes the
- // free-AI relay and the read-only audit export, nothing else, and leaves
+ // free-AI relay, read-only audit export, fixed engineering operations and the fixed card-tools fetch, and leaves
  // FIREWALL_CLIENT_KEYS_JSON untouched.
  const freeAiKey=env.FIREWALL_FREE_AI_FEDERATION_KEY||'';
  const freeAiAuth=createAuthenticator({env:{
    FIREWALL_CLIENT_KEYS_JSON:freeAiKey?JSON.stringify({federation:freeAiKey}):''
  },clock});
+ // The shared API's existing FIREWALL_FEDERATION_HMAC_KEY is paired with
+ // FIREWALL_FREE_AI_FEDERATION_KEY (render.yaml), NOT the main client ring.
+ // Prefer that pair; the main ring is a compatibility path only when no
+ // dedicated pair exists. The same key is used for re-signing the fixed hop.
+ const engineeringAuth=freeAiAuth.configured?freeAiAuth:auth;
+ const engineering=createEngineeringRelay({key:engineeringAuth.keyring().get('federation')?.[0],fetchImpl,clock});
  // Key hygiene across the main ring and every dedicated key (labels only, no key material).
  const keyHealth=keyringHealth(new Map([
   ...auth.keyring(),
@@ -198,6 +207,11 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  const apps=()=>independentApps(auth.configuredIds(),signedClients);
  const server=http.createServer({maxHeaderSize:8192},async(req,res)=>{
   const path=(req.url||'').split('?')[0];
+  let engineeringClient=null,engineeringService=null;
+  if(path===ENGINEERING_PATH)res.once('finish',()=>{
+   try{auditSink(JSON.stringify({type:'firewall.engineering.request',at:new Date(clock()).toISOString(),
+    method:req.method,status:res.statusCode,client:engineeringClient,service:engineeringService}));}catch{}
+  });
   // Probe audit is metadata only. Never log request bodies, client secrets,
   // signatures, IP addresses, cookies or provider payloads.
   let probeClient=null,probeRoute=null;
@@ -223,6 +237,14 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       type:'firewall.free-ai.request',at:new Date(clock()).toISOString(),
       method:req.method,status:res.statusCode,client:freeClient,provider:freeProvider,role:freeRole,
       attempts:freeAttempts,
+    }));}catch{/* Observability must not interrupt responses. */}
+  });
+  // Card tools audit: tool id only, never parameters (coordinates), response or IP.
+  let toolClient=null,toolId=null;
+  if(path===CARD_TOOLS_PATH)res.once('finish',()=>{
+    try{auditSink(JSON.stringify({
+      type:'firewall.card-tools.request',at:new Date(clock()).toISOString(),
+      method:req.method,status:res.statusCode,client:toolClient,tool:toolId,
     }));}catch{/* Observability must not interrupt responses. */}
   });
   // Activity acquisition / admin audit: fixed metadata only, never body or IP.
@@ -266,12 +288,36 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       activityAcquisitionEnabled:activitySourcesEnabled,
       assistantEnabled:assistant.enabled,
       freeAiEnabled:freeAi.enabled,
+      cardToolsEnabled:cardTools.enabled,
       sharedSecurity:{mode:storeMode,required:requireShared,
        configured:!!sharedStore,distributed:!!sharedStore},
       productionReady:false,cutoverEnabled:false,legacyConnectionsPreserved:true,
       independentApps:apps()});
    if(req.method==='GET'&&path==='/api/catalog')
-    return reply(res,200,{...publicCatalog(),independentApps:apps()});
+    return reply(res,200,{...publicCatalog(),engineering:publicEngineeringCatalog(engineeringAuth.configuredIds().has('federation')),independentApps:apps()});
+   if(req.method==='GET'&&path==='/api/engineering')
+    return reply(res,200,publicEngineeringCatalog(engineeringAuth.configuredIds().has('federation')));
+   if(path===ENGINEERING_PATH){
+    if(req.url!==ENGINEERING_PATH)return reply(res,400,{ok:false,error:'engineering-invalid-target'});
+    if(req.headers.origin||req.headers.cookie||req.headers.authorization)
+     return reply(res,403,{ok:false,error:'server-to-server-only'});
+    if(req.method!=='POST')return reply(res,405,{ok:false,error:'method-not-allowed'});
+    if(!/^application\/json(?:;|$)/i.test(req.headers['content-type']||''))return reply(res,415,{ok:false,error:'json-required'});
+    if(declaredTooLarge(req,ENGINEERING_MAX_BODY))return reply(res,413,{ok:false,error:'request-too-large'},{Connection:'close'});
+    const pre=precheckSignedHeaders(req,clock);
+    if(!pre.ok)return reply(res,pre.status,{ok:false,error:pre.reason},{Connection:'close'});
+    let body;try{body=await limitedBody(req,ENGINEERING_MAX_BODY);}catch{return reply(res,413,{ok:false,error:'request-too-large'},{Connection:'close'});}
+    const identity=engineeringAuth.verify(req,body,path);
+    if(!identity.ok)return reply(res,identity.status,{ok:false,error:identity.reason});
+    if(identity.client!=='federation')return reply(res,403,{ok:false,error:'engineering-client-not-allowed'});
+    let command;try{command=parseEngineeringCommand(body);}catch(e){return reply(res,e.status||400,{ok:false,error:e.code||'engineering-invalid-input'});}
+    const shared=await enforceShared(identity.client,req.headers['x-fw-nonce'],'engineering');
+    if(!shared.ok)return reply(res,shared.status,{ok:false,error:shared.reason});
+    engineeringClient=identity.client;engineeringService=command.service;
+    signedClients.add(identity.client);
+    try{return reply(res,200,await engineering.run(command));}
+    catch(e){return reply(res,e.status||502,{ok:false,error:e.code||'engineering-upstream-unavailable'});}
+   }
    if(req.method==='GET'&&path==='/api/acquisition-routes'){
     // Read-only ledger for the independent apps' screens. No credentials, key values or egress.
     const origin=req.headers.origin;
@@ -282,7 +328,8 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
    if(req.method==='GET'&&path==='/api/clients')
     return reply(res,200,{...publicClients(auth.configuredIds()),signing:SIGNING_CONTRACT,
       assistant:{...ASSISTANT_POLICY,enabled:assistant.enabled},
-      freeAi:{...FREE_AI_POLICY,enabled:freeAi.enabled}});
+      freeAi:{...FREE_AI_POLICY,enabled:freeAi.enabled},
+      cardTools:{...CARD_TOOLS_POLICY,enabled:cardTools.enabled}});
    if(req.method==='GET'&&(path==='/'||path==='/console')){
     const nonce=randomBytes(18).toString('base64url');
     return page(res,200,renderConsole({nonce,canaryEnabled:egress.liveEnabled,configuredIds:auth.configuredIds()}),nonce);
@@ -396,6 +443,38 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
       ...(a.skipped?{skipped:String(a.skipped).slice(0,40)}:{}),
       ...(a.failed?{failed:String(a.failed).slice(0,40)}:{}),
     })):null;
+    return reply(res,result.status,result.result,
+      result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});
+   }
+   if(req.method==='GET'&&path==='/api/card-tools')
+    return reply(res,200,{...CARD_TOOLS_POLICY,...cardTools.info()});
+   if(path===CARD_TOOLS_PATH){
+    // Federation の共通バックエンドだけが署名して呼ぶ（無料AIと同じ federation の鍵）。
+    if(req.headers.origin||req.headers.cookie||req.headers.authorization)
+     return reply(res,403,{ok:false,error:'server-to-server-only'});
+    if(req.method!=='POST')return reply(res,405,{ok:false,error:'method-not-allowed'});
+    if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))
+     return reply(res,415,{ok:false,error:'json-required'});
+    if(declaredTooLarge(req,CARD_TOOLS_MAX_BODY))
+     return reply(res,413,{ok:false,error:'request-too-large'},{Connection:'close'});
+    const pre=precheckSignedHeaders(req,clock);
+    if(!pre.ok)return reply(res,pre.status,{ok:false,error:pre.reason},{Connection:'close'});
+    let body;
+    try{body=await limitedBody(req,CARD_TOOLS_MAX_BODY);}
+    catch{return reply(res,413,{ok:false,error:'request-too-large'},{Connection:'close'});}
+    let identity=freeAiAuth.configured&&req.headers['x-fw-client']==='federation'
+      ?freeAiAuth.verify(req,body,path):auth.verify(req,body,path);
+    if(!identity.ok&&freeAiAuth.configured&&req.headers['x-fw-client']==='federation'
+      &&identity.reason==='signature-invalid'&&auth.configured)
+      identity=auth.verify(req,body,path);
+    if(!identity.ok)return reply(res,identity.status,{ok:false,error:identity.reason});
+    const shared=await enforceShared(identity.client,req.headers['x-fw-nonce'],'card-tools');
+    if(!shared.ok)return reply(res,shared.status,{ok:false,error:shared.reason});
+    toolClient=identity.client;signedClients.add(identity.client);
+    const parsed=parseCardToolCommand(body);
+    if(!parsed.ok)return reply(res,parsed.status,{ok:false,error:parsed.error});
+    toolId=parsed.command.tool;
+    const result=await cardTools.run(identity.client,parsed.command);
     return reply(res,result.status,result.result,
       result.result.retryAfterSeconds?{'Retry-After':String(result.result.retryAfterSeconds)}:{});
    }
@@ -578,7 +657,7 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  server.maxRequestsPerSocket=100;
  server.on('clientError',(_error,socket)=>{if(socket.writable)socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');});
  server.once('listening',()=>tenAppChanges.start());server.once('close',()=>tenAppChanges.stop());
- return {server,auth,access,egress,githubCanary,assistant,freeAi,registeredAi,risk};
+ return {server,auth,access,egress,githubCanary,assistant,freeAi,registeredAi,risk,cardTools};
 }
 // Owner-controlled, default-off, exactly one bounded public-text call per boot.
 // No endpoint, schedule, retry, prompt/answer log, or new caller authorization.
