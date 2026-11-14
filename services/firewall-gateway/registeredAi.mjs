@@ -138,7 +138,8 @@ export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.n
    if(response.status===404&&id==='openrouter'&&await reselectOpenRouter()){
     s.coolUntil=0;return deny(503,'provider-model-reselected');
    }
-   if(response.status!==200){s.coolUntil=now+60000;risk?.observe(id,'failure');return deny(503,'provider-unavailable');}
+   // 429・5xx は空き状況（60秒の cooldown で避ける）。危険の点数にはしない（riskGuard の AVAILABILITY）。
+   if(response.status!==200){s.coolUntil=now+60000;risk?.observe(id,response.status===429||response.status>=500?'upstream-'+response.status:'failure');return deny(503,'provider-unavailable');}
    const data=await readBoundedJson(response,FREE_AI_LIMITS.maxResponseBytes);
    if([data?.usage?.cost,data?.usage?.total_cost].some(v=>typeof v==='number'&&v>0)){
     s.stop=true;risk?.observe(id,'paid-usage-reported');return deny(503,'paid-usage-reported');

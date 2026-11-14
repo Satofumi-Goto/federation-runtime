@@ -193,3 +193,16 @@ test('FIREWALL_UNBLOCK の対象でも、課金表示・危険な応答・応答
  risk.observe('groq', 'paid-usage-reported');
  assert.equal(risk.blocked('groq'), 'auto:paid-usage-reported');
 });
+
+test('混み合い・相手側の障害（429・5xx）では、AI枠も遮断しない。時間切れ・通信失敗は従来どおり数える。保存された429の遮断は戻さない', async () => {
+ const now = Date.parse('2026-11-14T12:00:00Z');
+ const risk = createRiskGuard({env: {}, clock: () => now, dangerous: []});
+ for (let i = 0; i < 20; i++) for (const code of ['upstream-429', 'upstream-503']) risk.observe('blockrun', code);
+ assert.equal(risk.blocked('blockrun'), null);
+ for (let i = 0; i < 6; i++) risk.observe('llm7', 'timeout');
+ assert.match(String(risk.blocked('llm7')), /^auto:timeout$/);
+ const until = new Date(now + 3600000).toISOString();
+ assert.equal(risk.restore([{key: 'blockrun', reason: 'upstream-429', until}, {key: 'kilo', reason: 'redirect-refused', until}]), 1);
+ assert.equal(risk.blocked('blockrun'), null);
+ assert.match(String(risk.blocked('kilo')), /^auto:/);
+});
