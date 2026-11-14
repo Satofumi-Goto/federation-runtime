@@ -1,4 +1,4 @@
-name: Render deploy
+name: Engineering Gateway — live acceptance only
 # Firewall Gateway は自動配備OFF（FIREWALL_DEPLOYMENT.md）。手動起動のみで、指定SHAを配備し公開URLで確認する。
 # RENDER_API_KEY が未設定なら配備せず成功（skip）で終える。サービスの作成・削除・環境変数変更・DNS切替はしない。
 on:
@@ -35,9 +35,9 @@ jobs:
         with:
           node-version: '24'
       - run: node --test scripts/render-deploy/render-deploy.test.mjs
-      - name: Deploy and verify
+      - name: Verify existing signed engineering APIs
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           DEPLOY_SHA: ${{ github.sha }}
           RENDER_SERVICE_NAMES: federation-firewall-gateway
-        run: node scripts/render-deploy/render-deploy.mjs
+        run: node scripts/release/gateway-engineering-live.mjs
