@@ -206,3 +206,12 @@ test('混み合い・相手側の障害（429・5xx）では、AI枠も遮断し
  assert.equal(risk.blocked('blockrun'), null);
  assert.match(String(risk.blocked('kilo')), /^auto:/);
 });
+
+test('推論で上限を使い切った応答（reasoning-truncated・answer-truncated）では遮断せず、保存された同じ理由の遮断も戻さない', async () => {
+ const now = Date.parse('2026-11-14T13:40:00Z');
+ const risk = createRiskGuard({env: {}, clock: () => now, dangerous: []});
+ for (let i = 0; i < 12; i++) { risk.observe('ovhqwen', 'reasoning-truncated'); risk.observe('ovhqwen', 'answer-truncated'); }
+ assert.equal(risk.blocked('ovhqwen'), null);
+ assert.equal(risk.restore([{key: 'ovhqwen', reason: 'reasoning-truncated', until: new Date(now + 3600000).toISOString()}]), 0);
+ assert.equal(risk.blocked('ovhqwen'), null);
+});

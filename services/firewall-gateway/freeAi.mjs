@@ -286,6 +286,8 @@ export function createFreeAi({env=process.env,fetchImpl=fetch,clock=Date.now,sle
      ...(screened.redacted?{redactedSecrets:screened.redacted}:{}),attempts,paidCalls:0}};
    }catch(error){
     const code=failureCode(error);
+    // 答えが途中で切れた（推論で上限を使い切った）枠は、10分休ませる。危険の点数にはしない（riskGuard）。
+    if(code==='reasoning-truncated'||code==='answer-truncated')state[p].coolUntil=Math.max(state[p].coolUntil,clock()+600000);
     risk?.observe(p,code);
     attempts.push({provider:p,failed:code});
    }finally{state[p].active--;}

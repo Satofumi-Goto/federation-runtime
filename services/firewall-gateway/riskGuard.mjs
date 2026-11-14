@@ -23,7 +23,9 @@ const AVAILABILITY=new Set(['failure']);
 // 混み合い・相手側の障害（429・5xx）は、どの接続先でも危険の印ではない。各経路の60秒の cooldown で避ける。
 // これで6時間止めると、正常な無料枠（例：blockrun の 429）が長く使えなくなる。
 // 時間切れ・通信失敗（timeout・aborted・network）は cooldown が無く、形式違いも network に入りうるので、従来どおり数える。
-const isAvailability=code=>/^upstream-(?:429|5\d\d)$/.test(String(code));
+// 推論型モデルが上限まで考えて答えを返さない（reasoning-truncated・answer-truncated）のも、出力の長さの問題で危険の印ではない
+// （freeAi.mjs が10分の cooldown で避ける）。
+const isAvailability=code=>/^upstream-(?:429|5\d\d)$/.test(String(code))||['reasoning-truncated','answer-truncated'].includes(String(code));
 const ALWAYS_SCORED=new Set(['paid-usage-reported','unsafe-answer','secret-in-answer']);
 // 応答本文に現れた時、利用側のAIや画面を乗っ取る恐れが高いもの。
 export const UNSAFE_ANSWER_PATTERNS=Object.freeze([
