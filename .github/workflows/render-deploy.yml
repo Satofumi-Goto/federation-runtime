@@ -1,6 +1,6 @@
 name: Engineering Gateway — live acceptance only
-# Firewall Gateway は自動配備OFF（FIREWALL_DEPLOYMENT.md）。手動起動のみで、指定SHAを配備し公開URLで確認する。
-# RENDER_API_KEY が未設定なら配備せず成功（skip）で終える。サービスの作成・削除・環境変数変更・DNS切替はしない。
+# この専用ブランチは稼働中Gateway/APIの署名付き受入試験だけを実行する。
+# 配備・サービス作成・削除・環境変数変更・DNS切替は行わない。
 on:
   workflow_dispatch:
   pull_request:
@@ -38,6 +38,4 @@ jobs:
       - name: Verify existing signed engineering APIs
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          DEPLOY_SHA: ${{ github.sha }}
-          RENDER_SERVICE_NAMES: federation-firewall-gateway
         run: node scripts/release/gateway-engineering-live.mjs
