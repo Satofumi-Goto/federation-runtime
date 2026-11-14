@@ -123,3 +123,11 @@ This repository contains a **read-only deploy distribution** of the gateway orig
 - Canonical reviewed commit: `21ddb85832aac3a054ea6b50379d35cee354cf89` (federation-portal PR #1159). `ui.mjs` moves the one inline `style` attribute into the nonce-protected stylesheet (`.brand-sub`); the CSP is unchanged (`style-src` nonce only, no `unsafe-inline`).
 - `test/ui-csp.test.mjs` is added to the attestation (33 files); `ui.mjs` is mirrored as the exact Git blob from the same commit. The verifier's expected count is updated from 32 to 33 in the same PR.
 - Render (`srv-dbm40fp42hec73djn4cg`, auto-deploy OFF) must be manually deployed to the merge commit of this distribution PR.
+
+## 無料設計・解析APIとWorkの接続（2026-11-14）
+
+正本PR `Satofumi-Goto/federation-portal#2236`、統合SHA `4143a1c34063801e434214c2940e8f96e48bafb3` のGateway変更4ファイルを同一blobで配布する。その他の既存ファイルの個別正本pinは保持し、全60ファイルのattestationで未審査の追加・削除・改変を拒否する。
+
+`GET /api/engineering` は既存無料OSSの13操作を返す。`POST /api/v1/engineering/run` はfederationの既存専用署名鍵で受け、共有APIの固定内部実行口へ同じ鍵で別パス再署名する。主鍵と専用鍵は異なるものとして検証済み。通常の無料AI機能のON/OFFを変更しない。新しい秘密、AI呼出し、有料API、DB、サービス、DNS変更はない。
+
+Gatewayの実配備SHAを確認した後、正本の手動 `engineering-api-deploy.yml` で既存APIだけを配備する。同workflowの受入は毎回新規の単位換算→同要求の保存読込とCAD生成のSTEP/STL/SVG bytes/hashを照合する。認証情報や成果物本文は出力しない。Workは既存Federation MCPの `engineering.catalog` / `engineering.run` を使う。ローカルfixtureの成功・Actions緑・公開一覧だけを、公開OAuth/実PostgreSQL受入完了とみなさない。
