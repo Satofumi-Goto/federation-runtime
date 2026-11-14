@@ -143,8 +143,11 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
  const access=createAccessVerifier({env,fetchImpl,clock});
  const gatewaySecrets=gatewaySecretValues(env);
  configurePersonalTerms(env.FIREWALL_PERSONAL_TERMS);
- const egress=createEgress({env,fetchImpl,clock});
- const activityAcquisition=createActivityAcquisition({fetchImpl,clock});
+ // 危ないAPIの検知と遮断：AI枠とデータ源（外部API）で共有する。遮断は保存先に残し、再起動後も続ける（下で接続）。
+ let persistBlock=null;
+ const risk=createRiskGuard({env,clock,onBlock:(record,all)=>persistBlock?.(record,all)});
+ const egress=createEgress({env,fetchImpl,clock,risk});
+ const activityAcquisition=createActivityAcquisition({fetchImpl,clock,risk});
  const activitySourcesEnabled=env.FIREWALL_ACTIVITY_SOURCES_ENABLED==='true';
  const activityEventsEnabled=env.FIREWALL_ACTIVITY_EVENTS_ENABLED==='true';
  const githubCanary=createGithubCanaryVerifier({env,fetchImpl,clock});
@@ -175,9 +178,21 @@ export function createGatewayServer({env=process.env,fetchImpl=fetch,clock=Date.
   return {ok:true};
  }
  const assistant=createAssistant({env,fetchImpl,clock});
- const risk=createRiskGuard({env,clock});
+ // 遮断の保存と復元は、内部ネットワークの保存先（render-valkey、本番の構成）でだけ行う。
+ // HTTP 経由の保存先では、署名付き要求の前に余分な問い合わせを作らない。
+ if(sharedStore&&sharedStore.kind==='render-valkey'&&typeof sharedStore.saveRiskBlocks==='function'){
+  persistBlock=(record,all)=>{
+   // 監査には1件ずつ（理由の符号と期限だけ）、復元用には期限内の一覧を専用のキーへ丸ごと書く。
+   sharedStore.appendAudit({type:'firewall.risk.blocked',at:new Date(clock()).toISOString(),...record}).catch?.(()=>{});
+   const rows=Array.isArray(all)?all:[record];
+   const ttl=Math.max(...rows.map(r=>Date.parse(r.until)-clock()).filter(Number.isFinite),1000);
+   return sharedStore.saveRiskBlocks(rows,ttl);
+  };
+  // 起動時：保存先に残る遮断を戻す（期限切れ・FIREWALL_UNBLOCK の対象は捨てる）。
+  Promise.resolve(sharedStore.readRiskBlocks()).then(r=>{if(r?.ok)risk.restore(r.records);}).catch(()=>{});
+ }
  const freeAi=createFreeAi({env,fetchImpl,clock,risk});
- const cardTools=createCardTools({env,fetchImpl,clock});
+ const cardTools=createCardTools({env,fetchImpl,clock,risk});
  const registeredAi=createRegisteredAi({env,fetchImpl,clock,risk});
  // Dedicated free-AI credential for the federation client only. It authorizes the
  // free-AI relay, read-only audit export, fixed engineering operations and the fixed card-tools fetch, and leaves

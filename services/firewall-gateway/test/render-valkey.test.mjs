@@ -47,7 +47,10 @@ async function fakeValkey(callback){
    for(const command of commands){
     seen.push(command[0]);
     const [op,key]=command;
-    if(op==='SET'){
+    if(op==='SET'&&!command.includes('NX')){keys.set(key,command[2]);replies.push('+OK\r\n');}
+    else if(op==='GET'){const v=keys.get(key);replies.push(typeof v==='string'?'$'+Buffer.byteLength(v)+'\r\n'+v+'\r\n':'$-1\r\n');}
+    else if(op==='DEL'){replies.push(':'+(keys.delete(key)?1:0)+'\r\n');}
+    else if(op==='SET'){
      if(keys.has(key))replies.push('$-1\r\n');
      else{keys.set(key,1);replies.push('+OK\r\n');}
     }else if(op==='INCR'){
@@ -157,5 +160,18 @@ test('audit list can be read back newest-first through LRANGE, bounded and bulk-
   assert.deepEqual(r.lines.map(l=>JSON.parse(l).i),[2,1]);
   const all=await s.readAudit(300);
   assert.equal(all.lines.length,3);
+ });
+});
+
+test('危ないAPIの自動遮断は監査記録と分けた期限付きのキーに置き、別の接続から読み戻せる',async()=>{
+ await fakeValkey(async({transport,keys,list})=>{
+  const a=createRenderValkeyStore({url:valid,transport}),b=createRenderValkeyStore({url:valid,transport});
+  const rows=[{key:'host:flaky.example.net',reason:'redirect-refused',until:'2026-11-14T01:00:00.000Z'}];
+  assert.deepEqual(await a.saveRiskBlocks(rows,1800000),{ok:true});
+  assert.equal(list.length,0);
+  assert.deepEqual(await b.readRiskBlocks(),{ok:true,records:rows});
+  assert.deepEqual(await a.saveRiskBlocks([],1000),{ok:true});
+  assert.equal(keys.has('fw:risk-blocks'),false);
+  assert.deepEqual(await b.readRiskBlocks(),{ok:true,records:[]});
  });
 });

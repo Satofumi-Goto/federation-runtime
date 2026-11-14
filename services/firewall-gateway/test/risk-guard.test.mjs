@@ -94,3 +94,102 @@ test('収集：断られた（429）時は1回だけ待って再試行し、間�
  assert.equal(waits[0],40);
  assert.ok(waits.filter(w=>w===10).length>=1);
 });
+
+test('データ源（外部API）もホスト名で遮断する：即時停止・一覧・点数・再起動後の復元', async () => {
+ const {createRiskGuard} = await import('../riskGuard.mjs');
+ let now = Date.parse('2026-11-14T00:00:00Z');
+ const saved = [];
+ const risk = createRiskGuard({env: {FIREWALL_BLOCKED_SOURCES: 'Bad.example.com'}, clock: () => now, dangerous: [{host: 'listed.example.org', reason: 'known-malware'}], onBlock: r => saved.push(r)});
+ assert.equal(risk.blockedSource('bad.example.com'), 'manual-block');
+ assert.equal(risk.blockedSource('listed.example.org'), 'listed:known-malware');
+ assert.equal(risk.blockedSource('ok.example.net'), null);
+ for (let i = 0; i < 3; i++) risk.observeSource('flaky.example.net', 'redirect-refused');
+ assert.match(risk.blockedSource('flaky.example.net'), /^auto:redirect-refused$/);
+ assert.equal(saved.length, 1);
+ assert.equal(saved[0].key, 'host:flaky.example.net');
+ assert.ok(risk.info().autoBlocks.some(b => b.provider === 'host:flaky.example.net'));
+ // 再起動：新しいガードに保存した遮断を戻すと、期限まで遮断が続く。
+ const again = createRiskGuard({env: {}, clock: () => now, dangerous: []});
+ assert.equal(again.restore([...saved, {key: 'host:old.example.net', reason: 'failure', until: '2020-01-01T00:00:00Z'}, {key: 'bad key', reason: 'x', until: 'y'}]), 1);
+ assert.match(again.blockedSource('flaky.example.net'), /^auto:/);
+ assert.equal(again.blockedSource('old.example.net'), null);
+ now += 7 * 3600000;
+ assert.equal(again.blockedSource('flaky.example.net'), null);
+});
+
+test('カードの道具は遮断中の接続先を呼ばず、失敗を点数にする', async () => {
+ const {createCardTools, CARD_TOOLS} = await import('../cardTools.mjs');
+ const risk = createRiskGuard({env: {}, dangerous: []});
+ let calls = 0;
+ const tools = createCardTools({env: {FIREWALL_CARD_TOOLS_ENABLED: 'true'}, risk,
+  fetchImpl: async () => { calls++; return new Response('x', {status: 302, headers: {location: 'https://elsewhere.example'}}); }});
+ const params = n => ({from: [35.68, 139.76], to: [[35.6 + n / 100, 139.7]]});
+ const host = new URL(CARD_TOOLS['osrm-table'].url(CARD_TOOLS['osrm-table'].parse(params(0)))).hostname;
+ // リダイレクト（3点）が2回で閾値6に届き、遮断される。
+ for (let n = 0; n < 2; n++) {
+  const out = await tools.run('federation', {tool: 'osrm-table', params: CARD_TOOLS['osrm-table'].parse(params(n))});
+  assert.equal(out.status, 502);
+ }
+ assert.match(String(risk.blockedSource(host)), /^auto:/);
+ const before = calls;
+ const blocked = await tools.run('federation', {tool: 'osrm-table', params: CARD_TOOLS['osrm-table'].parse(params(5))});
+ assert.equal(blocked.result.error, 'source-risk-blocked');
+ assert.equal(calls, before);
+});
+
+test('データ源：空き状況の揺れ（429・5xx）は点数にせず、遮断は30分', async () => {
+ let now = Date.parse('2026-11-14T00:00:00Z');
+ const risk = createRiskGuard({env: {}, clock: () => now, dangerous: []});
+ for (let i = 0; i < 20; i++) risk.observeSource('service.api.metro.tokyo.lg.jp', 'failure');
+ assert.equal(risk.blockedSource('service.api.metro.tokyo.lg.jp'), null);
+ // AI枠は従来どおり失敗も数える。
+ for (let i = 0; i < 6; i++) risk.observe('groq', 'failure');
+ assert.match(String(risk.blocked('groq')), /^auto:/);
+ risk.observeSource('news.google.com', 'redirect-refused');
+ risk.observeSource('news.google.com', 'redirect-refused');
+ assert.match(String(risk.blockedSource('news.google.com')), /^auto:/);
+ now += 31 * 60000;
+ assert.equal(risk.blockedSource('news.google.com'), null);
+});
+
+test('誤った自動遮断は FIREWALL_UNBLOCK で外れ、復元もされない。即時停止の書き方の揺れを受け付ける', async () => {
+ const now = Date.parse('2026-11-14T00:00:00Z');
+ const risk = createRiskGuard({clock: () => now, dangerous: [{host: 'listed.example.org', reason: 'known-malware'}],
+  env: {FIREWALL_UNBLOCK: 'news.google.com,groq', FIREWALL_BLOCKED_SOURCES: 'a.example.com.,b.example.com:443,https://c.example.com/x,not a host',
+   FIREWALL_BLOCKED_PROVIDERS: 'Bad Name'}});
+ const until = new Date(now + 3600000).toISOString();
+ assert.equal(risk.restore([{key: 'host:news.google.com', reason: 'redirect-refused', until}, {key: 'groq', reason: 'failure', until},
+  {key: 'host:other.example.net', reason: 'redirect-refused', until}]), 1);
+ assert.equal(risk.blockedSource('news.google.com'), null);
+ for (let i = 0; i < 5; i++) risk.observeSource('news.google.com', 'redirect-refused');
+ assert.equal(risk.blockedSource('news.google.com'), null);
+ for (const h of ['a.example.com', 'b.example.com', 'c.example.com']) assert.equal(risk.blockedSource(h), 'manual-block', h);
+ const info = risk.info();
+ assert.equal(info.ignoredManual, 2);
+ assert.deepEqual(info.unblocked, ['groq', 'host:news.google.com']);
+ assert.equal(info.listed[0].key, 'host:listed.example.org');
+ assert.equal(info.listed[0].host, 'listed.example.org');
+ assert.ok(risk.autoBlockRecords().some(r => r.key === 'host:other.example.net'));
+});
+
+test('遮断中の接続先は、カードの道具・外部取得のキャッシュの残りも返さない', async () => {
+ const {createCardTools, CARD_TOOLS} = await import('../cardTools.mjs');
+ const risk = createRiskGuard({env: {}, dangerous: []});
+ const tools = createCardTools({env: {FIREWALL_CARD_TOOLS_ENABLED: 'true'}, risk,
+  fetchImpl: async () => new Response(JSON.stringify({code: 'Ok', durations: [[0, 60]], distances: [[0, 900]]}), {status: 200, headers: {'content-type': 'application/json'}})});
+ const params = CARD_TOOLS['osrm-table'].parse({from: [35.68, 139.76], to: [[35.6, 139.7]]});
+ const first = await tools.run('federation', {tool: 'osrm-table', params});
+ assert.equal(first.status, 200, JSON.stringify(first.result));
+ const host = new URL(CARD_TOOLS['osrm-table'].url(params)).hostname;
+ risk.observeSource(host, 'redirect-refused'); risk.observeSource(host, 'redirect-refused');
+ const again = await tools.run('federation', {tool: 'osrm-table', params});
+ assert.equal(again.result.error, 'source-risk-blocked');
+});
+
+test('FIREWALL_UNBLOCK の対象でも、課金表示・危険な応答・応答内の秘密では遮断する', async () => {
+ const risk = createRiskGuard({env: {FIREWALL_UNBLOCK: 'groq'}, dangerous: []});
+ for (let i = 0; i < 5; i++) risk.observe('groq', 'redirect-refused');
+ assert.equal(risk.blocked('groq'), null);
+ risk.observe('groq', 'paid-usage-reported');
+ assert.equal(risk.blocked('groq'), 'auto:paid-usage-reported');
+});

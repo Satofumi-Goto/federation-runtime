@@ -44,7 +44,38 @@ function configFor(id,env){
  const privatePrompts=env[p+'_PRIVATE_PROCESSING_CONFIRMED']==='true'&&!['gemini','mistral'].includes(id);
  return {enabled:!reason,reason:reason||'armed',privatePrompts};
 }
+// OpenRouter の無料モデルは入れ替わりが激しく、固定のモデルが消えると 404 が続く（11-14 に発生）。
+// 404 の時だけ公開のモデル一覧から「:free で価格0」のモデルを選び直す。6時間に1回まで、鍵は送らない。
+export const OPENROUTER_MODELS_URL='https://openrouter.ai/api/v1/models';
+const OPENROUTER_PREFERRED=[/^meta-llama\//,/^google\/gemma/,/^mistralai\//,/^qwen\//,/^deepseek\//];
+export function pickOpenRouterFreeModel(list){
+ const free=(Array.isArray(list)?list:[]).filter(m=>typeof m?.id==='string'&&/^[a-z0-9._\/-]{3,120}:free$/i.test(m.id)
+  // 価格の欄（prompt・completion・request・image・web_search など）が全て0のものだけ。
+  &&m.pricing&&typeof m.pricing==='object'&&Object.keys(m.pricing).length>=2
+  &&Object.values(m.pricing).every(v=>String(v)==='0'));
+ for(const re of OPENROUTER_PREFERRED){const hit=free.filter(m=>re.test(m.id)).sort((a,b)=>(b.context_length||0)-(a.context_length||0))[0];if(hit)return hit.id;}
+ return free.sort((a,b)=>(b.context_length||0)-(a.context_length||0))[0]?.id||null;
+}
 export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.now,risk=null}={}){
+ const chosen={};let modelsCheckedAt=-Infinity,modelsRetryMs=6*3600000;
+ const modelFor=id=>chosen[id]||REGISTERED_AI_PROVIDERS[id].model;
+ // 私的な処理の確認（_PRIVATE_PROCESSING_CONFIRMED）は固定モデルについてのもの。選び直したモデルには引き継がない。
+ const privateFor=id=>configs[id].privatePrompts&&!chosen[id];
+ async function reselectOpenRouter(){
+  if(clock()-modelsCheckedAt<modelsRetryMs)return false;
+  // 取得できなかった時は30分後にやり直す。取得できた時は6時間あける。
+  modelsCheckedAt=clock();modelsRetryMs=30*60000;
+  try{
+   const response=await fetchImpl(OPENROUTER_MODELS_URL,{method:'GET',redirect:'manual',credentials:'omit',
+    headers:{Accept:'application/json'},signal:AbortSignal.timeout(FREE_AI_LIMITS.timeoutMs)});
+   if(response.status!==200)return false;
+   const data=await readBoundedJson(response,4*1024*1024);
+   const next=pickOpenRouterFreeModel(data?.data);
+   modelsRetryMs=6*3600000;
+   if(next&&next!==modelFor('openrouter')){chosen.openrouter=next;return true;}
+  }catch{/* keep the current model; try again after the interval */}
+  return false;
+ }
  const configs=Object.fromEntries(ids.map(id=>[id,configFor(id,env)]));
  const state=Object.fromEntries(ids.map(id=>[id,{day:'',count:0,minute:[],active:false,stop:false,coolUntil:0,lastHttpStatus:null,lastErrorStatus:null}]));
  const clients=new Set((env.FIREWALL_FREE_AI_CLIENT_IDS||'federation').split(',').filter(Boolean));
@@ -58,7 +89,7 @@ export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.n
   if(risk?.blocked(id))return deny(503,'provider-risk-blocked');
   if(Object.values(REGISTERED_AI_PROVIDERS).some(p=>env[p.key]&&command.messages.some(m=>m.content.includes(env[p.key]))))
    return deny(422,'secret-detected');
-  if(!cfg.privatePrompts&&(codeRoles.has(command.role)||hasPersonalData(command.messages.map(m=>m.content))))
+  if(!privateFor(id)&&(codeRoles.has(command.role)||hasPersonalData(command.messages.map(m=>m.content))))
    return deny(400,'provider-not-allowed-for-role-or-personal-data');
   const s=state[id],now=clock(),day=new Date(now).toISOString().slice(0,10);
   if(s.day!==day){s.day=day;s.count=0;s.stop=false;}
@@ -78,7 +109,7 @@ export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.n
    if(id==='gemini'){
     const system=command.messages.filter(m=>m.role==='system').map(m=>({text:m.content}));
     if(system.length)body.systemInstruction={parts:system};
-   }else if(id!=='cloudflare')body.model=spec.model;
+   }else if(id!=='cloudflare')body.model=modelFor(id);
    if(id==='groq'){
     body.max_completion_tokens=tokens;delete body.max_tokens;body.reasoning_effort='low';
    }
@@ -104,6 +135,9 @@ export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.n
     }catch{/* Never expose arbitrary provider error bodies. */}
    }
    if([401,402,403].includes(response.status)){s.stop=true;risk?.observe(id,'auth-refused');return deny(503,'provider-auth-or-budget-refused');}
+   if(response.status===404&&id==='openrouter'&&await reselectOpenRouter()){
+    s.coolUntil=0;return deny(503,'provider-model-reselected');
+   }
    if(response.status!==200){s.coolUntil=now+60000;risk?.observe(id,'failure');return deny(503,'provider-unavailable');}
    const data=await readBoundedJson(response,FREE_AI_LIMITS.maxResponseBytes);
    if([data?.usage?.cost,data?.usage?.total_cost].some(v=>typeof v==='number'&&v>0)){
@@ -118,7 +152,7 @@ export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.n
    const safe=risk?risk.screenAnswer(id,own):{ok:true,...redactSecrets(own)};
    if(!safe.ok)return deny(503,'unsafe-answer');
    risk?.success(id);
-   return {status:200,result:{ok:true,provider:id,model:spec.model,text:safe.text,
+   return {status:200,result:{ok:true,provider:id,model:modelFor(id),text:safe.text,
     freeTierConfirmed:true,costVerified:false}};
   }catch(error){
    const code=failureCode(error);
@@ -129,7 +163,7 @@ export function createRegisteredAi({env=process.env,fetchImpl=fetch,clock=Date.n
  }
  return {chat,info:()=>({enabled:ids.some(id=>configs[id].enabled),signedServerToServerOnly:true,
   automaticFallback:false,costVerified:false,limits,
-  providers:ids.map(id=>({id,model:REGISTERED_AI_PROVIDERS[id].model,...configs[id],
-   codeRolesAllowed:configs[id].privatePrompts,requestsToday:state[id].count,
+  providers:ids.map(id=>({id,model:modelFor(id),...configs[id],
+   privatePrompts:privateFor(id),codeRolesAllowed:privateFor(id),requestsToday:state[id].count,
    lastHttpStatus:state[id].lastHttpStatus,lastErrorStatus:state[id].lastErrorStatus}))})};
 }

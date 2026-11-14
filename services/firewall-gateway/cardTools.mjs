@@ -59,7 +59,7 @@ export function parseCardToolCommand(body){
   return {ok:true,command:{tool:data.tool,params}};
 }
 
-export function createCardTools({env=process.env,fetchImpl=fetch,clock=Date.now}={}){
+export function createCardTools({env=process.env,fetchImpl=fetch,clock=Date.now,risk=null}={}){
   const enabled=env.FIREWALL_CARD_TOOLS_ENABLED==='true';
   const cache=new Map(),started=new Map(); let active=0,total=0,windowStart=clock();
   const admit=(client)=>{const now=clock();if(now-windowStart>=60_000||now<windowStart){windowStart=now;total=0;started.clear();}
@@ -69,6 +69,9 @@ export function createCardTools({env=process.env,fetchImpl=fetch,clock=Date.now}
     if(client!=='federation')return {status:403,result:{ok:false,error:'client-not-permitted'}};
     const t=CARD_TOOLS[tool]; const url=new URL(t.url(params));
     if(url.protocol!=='https:'||url.username||url.password||(url.port&&url.port!=='443'))return {status:503,result:{ok:false,error:'upstream-policy-invalid'}};
+    // 危ないと判定した接続先（即時停止・危険情報の一覧・点数による遮断）は、キャッシュの残りも返さない。
+    const danger=risk?.blockedSource(url.hostname);
+    if(danger)return {status:503,result:{ok:false,error:'source-risk-blocked'}};
     const key=url.href; const hit=cache.get(key); const now=clock();
     if(hit&&now-hit.at<TTL_MS)return {status:200,result:{...hit.result,cached:true}};
     if(!admit(client))return {status:429,result:{ok:false,error:'rate-limited',retryAfterSeconds:60}};
@@ -78,8 +81,13 @@ export function createCardTools({env=process.env,fetchImpl=fetch,clock=Date.now}
       const data=await readBoundedJson(response,MAX_BYTES);
       const result={ok:true,tool,provider:t.provider,license:t.license,fetchedAt:new Date(clock()).toISOString(),data:t.project(data,params)};
       cache.set(key,{at:clock(),result}); if(cache.size>200)cache.delete(cache.keys().next().value);
+      risk?.successSource(url.hostname);
       return {status:200,result};
-    }catch(e){return {status:502,result:{ok:false,error:['redirect-refused','response-too-large','invalid-content-type','upstream-invalid'].includes(e.message)?e.message:'upstream-unavailable'}};}
+    }catch(e){
+      const code=['redirect-refused','response-too-large','invalid-content-type','upstream-invalid'].includes(e.message)?e.message:'upstream-unavailable';
+      risk?.observeSource(url.hostname,{'response-too-large':'response-too-large','redirect-refused':'redirect-refused','invalid-content-type':'invalid-content-type','upstream-invalid':'invalid-json-shape'}[code]||'failure');
+      return {status:502,result:{ok:false,error:code}};
+    }
     finally{active--;}
   }
   return {enabled,run,info:()=>({enabled,cached:cache.size})};
